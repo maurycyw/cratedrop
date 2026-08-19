@@ -78,9 +78,20 @@ def analyze_track(path: Path, processed_dir: Path) -> tuple[TrackAnalysis, bool]
     except Exception:  # noqa: BLE001
         cues = ()
 
+    # Re-analysis must never lose user data: carry deck/manual cues from any
+    # prior cache entry (even a stale-version one) over the fresh heuristics.
+    from ..model import CueSource, merge_cues
+    stale = cache.load_any(processed_dir, meta.sha1)
+    if stale is not None:
+        user_cues = tuple(c for c in stale.cues if c.source != CueSource.HEURISTIC)
+        if user_cues:
+            cues = merge_cues(user_cues, cues)
+
     analysis = TrackAnalysis(meta=meta, grid=grid, key=key, cues=cues,
                              waveform=waveform,
                              analyzer_versions=dict(cache.ANALYZER_VERSIONS))
+    from .. import overrides
+    analysis = overrides.apply(analysis, overrides.load(processed_dir, meta.sha1))
     cache.store(processed_dir, analysis)
     return analysis, False
 

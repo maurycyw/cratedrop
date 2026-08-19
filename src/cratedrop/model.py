@@ -114,6 +114,11 @@ class TrackAnalysis:
     waveform: WaveformData | None = None
     analyzer_versions: dict[str, str] = field(default_factory=dict)
 
+    def replace_cues(self, cues: tuple[CuePoint, ...]) -> "TrackAnalysis":
+        from dataclasses import replace
+
+        return replace(self, cues=cues)
+
     # -- JSON round-trip (cache format) ------------------------------------
 
     def to_json(self) -> str:

@@ -33,6 +33,18 @@ def load(processed_dir: Path, sha1: str) -> TrackAnalysis | None:
     return analysis
 
 
+def load_any(processed_dir: Path, sha1: str) -> TrackAnalysis | None:
+    """Load ignoring analyzer versions — for merging user data (deck cues)
+    into whatever analysis exists, current or stale."""
+    path = cache_dir(processed_dir) / f"{sha1}.json"
+    if not path.exists():
+        return None
+    try:
+        return TrackAnalysis.load(path)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def store(processed_dir: Path, analysis: TrackAnalysis) -> None:
     path = cache_dir(processed_dir) / f"{analysis.meta.sha1}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
