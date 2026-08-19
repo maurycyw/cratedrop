@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.DS_Store
+# local golden snapshots of real libraries (large / copyrighted) — committed set lives in tests/fixtures/golden/
+tests/fixtures/golden-local/
+._*
+.DS_Store

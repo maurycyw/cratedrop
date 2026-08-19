@@ -1,0 +1,133 @@
+"""Assemble ANLZ0000.DAT / .EXT / .2EX from a TrackAnalysis.
+
+Section order matters and is confirmed from native Rekordbox exports:
+  DAT: PPTH, PVBR, PQTZ, PWAV, PWV2, PCOB(hot A-C), PCOB(memory)
+  EXT: PPTH, PWV3, PCOB(hot D+), PCOB(memory stub), PCO2(all hot), PCO2(stub),
+       PQT2, PWV5, PWV4
+  2EX: PPTH, PWV7, PWV6, PWVC
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from ...model import CueKind, CuePoint, TrackAnalysis
+from . import quantize, sections
+from .sections import PIONEER_PALETTE, anlz_folder_name
+
+# Default hot-cue colors by slot (A..H) when a cue has no explicit color:
+# A=green (first kick), B=red (drop), C=yellow (breakdown), D=blue (outro),
+# then the remaining Pioneer palette entries.
+DEFAULT_SLOT_COLORS = ["#00ff00", "#ff0000", "#ffff00", "#0080ff",
+                       "#ff9900", "#00b4d8", "#cc00ff", "#ff6b35"]
+
+_CODE_TO_HEX = {code: hex_ for hex_, code in PIONEER_PALETTE.items()}
+
+# Memory-cue writing is disabled pending our own hardware verification: the
+# DjManager reference verified the byte layout but found deck behavior
+# unreliable and ships with it off. Revisit at M3.5 with golden deck diffs.
+WRITE_MEMORY_CUES = False
+
+
+def _slot_num(cue: CuePoint) -> int:
+    """Model slot 'A'..'H' -> Pioneer hot_cue number 1..8 (0 = memory cue)."""
+    if cue.kind == CueKind.MEMORY or not cue.slot:
+        return 0
+    return ord(cue.slot.upper()) - ord("A") + 1
+
+
+def _color_hex(cue: CuePoint) -> str:
+    if cue.color_id in _CODE_TO_HEX:
+        return _CODE_TO_HEX[cue.color_id]
+    num = _slot_num(cue)
+    return DEFAULT_SLOT_COLORS[(num - 1) % len(DEFAULT_SLOT_COLORS)] if num else ""
+
+
+def _hot_cues(analysis: TrackAnalysis) -> list[CuePoint]:
+    return sorted((c for c in analysis.cues if c.kind == CueKind.HOT and c.slot),
+                  key=_slot_num)
+
+
+def _beats(analysis: TrackAnalysis) -> list[tuple[int, float]]:
+    if analysis.grid is None:
+        return []
+    return [(b.beat_in_bar, b.time_ms) for b in analysis.grid.beats]
+
+
+def build_dat(analysis: TrackAnalysis, usb_file_path: str) -> bytes:
+    bpm = analysis.grid.bpm if analysis.grid else 0.0
+    hot = [(n, round(c.time_ms), _color_hex(c))
+           for c in _hot_cues(analysis) if 1 <= (n := _slot_num(c)) <= 3]
+    body = [
+        sections.build_ppth(usb_file_path),
+        sections.build_pvbr(),
+        sections.build_pqtz(_beats(analysis), bpm),
+    ]
+    if analysis.waveform:
+        body.append(sections.build_pwav(quantize.pwav_bytes(analysis.waveform)))
+        body.append(sections.build_pwv2(quantize.pwv2_bytes(analysis.waveform)))
+    body.append(sections.build_pcob_slot(1, hot))
+    body.append(sections.build_pcob_slot(0, []))
+    payload = b"".join(body)
+    return sections.build_file_header(28 + len(payload)) + payload
+
+
+def build_ext(analysis: TrackAnalysis, usb_file_path: str) -> bytes:
+    bpm = analysis.grid.bpm if analysis.grid else 0.0
+    ext_hot = [(n, round(c.time_ms), _color_hex(c))
+               for c in _hot_cues(analysis) if (n := _slot_num(c)) >= 4]
+    all_hot = [(n, round(c.time_ms), c.label, _color_hex(c))
+               for c in _hot_cues(analysis) if (n := _slot_num(c)) >= 1]
+    body = [sections.build_ppth(usb_file_path)]
+    if analysis.waveform:
+        body.append(sections.build_pwv3(quantize.pwv3_bytes(analysis.waveform)))
+    body.append(sections.build_pcob_slot(1, ext_hot))
+    body.append(sections.build_pcob_slot(0, []))
+    body.append(sections.build_pco2_slot(1, all_hot))
+    body.append(sections.build_pco2_slot(0, []))
+    body.append(sections.build_pqt2(_beats(analysis), bpm))
+    if analysis.waveform:
+        body.append(sections.build_pwv5(quantize.pwv5_bytes(analysis.waveform)))
+        body.append(sections.build_pwv4(quantize.pwv4_bytes(analysis.waveform)))
+    payload = b"".join(body)
+    return sections.build_file_header(28 + len(payload)) + payload
+
+
+def build_2ex(analysis: TrackAnalysis, usb_file_path: str) -> bytes | None:
+    if not analysis.waveform:
+        return None
+    w = analysis.waveform
+    pwv7 = quantize.pwv7_bytes(w)
+    body = [
+        sections.build_ppth(usb_file_path),
+        sections.build_pwv7(pwv7, len(pwv7) // 3),
+        sections.build_pwv6(quantize.pwv6_bytes(w)),
+        sections.build_pwvc(),
+    ]
+    payload = b"".join(body)
+    return sections.build_file_header(28 + len(payload)) + payload
+
+
+def write_anlz(analysis: TrackAnalysis, usb_file_path: str,
+               usb_root: Path) -> dict[str, Path]:
+    """Write the analysis files for one track under usb_root/PIONEER/USBANLZ.
+
+    usb_file_path is the USB-relative audio path (e.g.
+    "/Contents/Artist/Album/Track.mp3") — it determines the hash folder and is
+    embedded in every file's PPTH tag.
+    """
+    anlz_dir = usb_root / "PIONEER" / "USBANLZ" / anlz_folder_name(usb_file_path)
+    anlz_dir.mkdir(parents=True, exist_ok=True)
+    written: dict[str, Path] = {}
+    for name, data in (("ANLZ0000.DAT", build_dat(analysis, usb_file_path)),
+                       ("ANLZ0000.EXT", build_ext(analysis, usb_file_path)),
+                       ("ANLZ0000.2EX", build_2ex(analysis, usb_file_path))):
+        if data is None:
+            continue
+        (anlz_dir / name).write_bytes(data)
+        written[name] = anlz_dir / name
+    return written
+
+
+def anlz_usb_relative_dir(usb_file_path: str) -> str:
+    return f"PIONEER/USBANLZ/{anlz_folder_name(usb_file_path)}"

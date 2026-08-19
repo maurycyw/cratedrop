@@ -1,0 +1,142 @@
+"""Build/update the processed USB image from staged audio files.
+
+The image is the exact tree a stick should carry:
+  Contents/<Artist>/<Album>/<Track>.<ext>
+  PIONEER/rekordbox/export.pdb  (+ exportExt.pdb)
+  PIONEER/USBANLZ/P.../..../ANLZ0000.{DAT,EXT,2EX}
+  PIONEER/.cratedrop.json       (manifest: everything we authored, with sha1s)
+
+Audio copies and analysis are incremental (sha1-keyed cache); the pdb and
+ANLZ files are cheap and rebuilt from the template on every run.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import shutil
+from dataclasses import dataclass
+from importlib.resources import files
+from pathlib import Path
+
+from .. import cache
+from ..analysis.waveform import SAMPLE_RATE, analyze_waveform
+from ..audio.decode import decode_mono, is_audio_file
+from ..audio.tags import read_meta, tag_bpm
+from ..formats.anlz import writer as anlz_writer
+from ..formats.pdb.builder import PdbBuilder
+from ..model import BeatGrid, TrackAnalysis
+from .layout import dedupe, usb_audio_path
+
+MANIFEST_REL = "PIONEER/.cratedrop.json"
+
+# Default seed: a genuine zero-track export authored by Rekordbox 7.2.18
+# (golden 'empty' capture) — keeps every undocumented header field bit-true.
+_TEMPLATES = files("cratedrop.formats.pdb") / "templates"
+
+
+@dataclass
+class BuildReport:
+    analyzed: list[str]
+    cached: list[str]
+    copied: list[str]
+    tracks: int
+    warnings: list[str]
+
+
+def scan_staging(staging_dir: Path) -> list[Path]:
+    return sorted(p for p in staging_dir.rglob("*")
+                  if p.is_file() and is_audio_file(p) and not p.name.startswith("."))
+
+
+def analyze_track(path: Path, processed_dir: Path) -> tuple[TrackAnalysis, bool]:
+    """Returns (analysis, was_cached)."""
+    meta = read_meta(path)
+    cached = cache.load(processed_dir, meta.sha1)
+    if cached is not None:
+        return cached, True
+
+    samples = decode_mono(path, SAMPLE_RATE)
+    waveform = analyze_waveform(samples)
+    duration_ms = meta.duration_ms or len(samples) / SAMPLE_RATE * 1000.0
+    # Placeholder grid until real DSP (M4): tag BPM or 128, phase 0.
+    bpm = tag_bpm(path) or 128.0
+    grid = BeatGrid.constant(bpm=bpm, first_beat_ms=0.0, duration_ms=duration_ms)
+
+    analysis = TrackAnalysis(meta=meta, grid=grid, waveform=waveform,
+                             analyzer_versions=dict(cache.ANALYZER_VERSIONS))
+    cache.store(processed_dir, analysis)
+    return analysis, False
+
+
+def _template_paths(golden_dir: Path | None) -> tuple[Path, Path]:
+    """(export template, exportExt template)."""
+    if golden_dir:
+        pdb = golden_dir / "PIONEER" / "rekordbox" / "export.pdb"
+        ext = golden_dir / "PIONEER" / "rekordbox" / "exportExt.pdb"
+        if pdb.exists():
+            return pdb, ext
+    return (Path(str(_TEMPLATES / "empty-export.pdb")),
+            Path(str(_TEMPLATES / "empty-exportExt.pdb")))
+
+
+def build_image(staging_dir: Path, processed_dir: Path,
+                template_dir: Path | None = None) -> BuildReport:
+    report = BuildReport(analyzed=[], cached=[], copied=[], tracks=0, warnings=[])
+    processed_dir.mkdir(parents=True, exist_ok=True)
+
+    template_pdb, template_ext = _template_paths(template_dir)
+    builder = PdbBuilder.from_template(template_pdb)
+    taken = {t.file_path.lower() for t in builder.db.tracks}
+    manifest: dict[str, dict] = {}
+
+    playlist_id = builder.create_playlist("cratedrop")
+
+    for src in scan_staging(staging_dir):
+        analysis, was_cached = analyze_track(src, processed_dir)
+        (report.cached if was_cached else report.analyzed).append(src.name)
+
+        rel_audio = dedupe(usb_audio_path(analysis.meta), taken)
+        taken.add(rel_audio.lower())
+
+        dest = processed_dir / rel_audio.lstrip("/")
+        if not dest.exists() or dest.stat().st_size != analysis.meta.file_size:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
+            report.copied.append(rel_audio)
+        manifest[rel_audio.lstrip("/")] = {"size": dest.stat().st_size,
+                                           "sha1": analysis.meta.sha1}
+
+        written = anlz_writer.write_anlz(analysis, rel_audio, processed_dir)
+        anlz_dat_rel = "/" + str(written["ANLZ0000.DAT"].relative_to(processed_dir))
+        for path in written.values():
+            rel = str(path.relative_to(processed_dir))
+            manifest[rel] = {"size": path.stat().st_size,
+                             "sha1": hashlib.sha1(path.read_bytes()).hexdigest()}
+
+        track_id = builder.add_track(analysis, rel_audio, anlz_dat_rel)
+        builder.add_to_playlist(playlist_id, track_id)
+        report.tracks += 1
+
+    pdb_dir = processed_dir / "PIONEER" / "rekordbox"
+    pdb_dir.mkdir(parents=True, exist_ok=True)
+    builder.save(pdb_dir / "export.pdb")
+    if template_ext.exists():
+        shutil.copy2(template_ext, pdb_dir / "exportExt.pdb")
+    for name in ("export.pdb", "exportExt.pdb"):
+        path = pdb_dir / name
+        if path.exists():
+            rel = f"PIONEER/rekordbox/{name}"
+            manifest[rel] = {"size": path.stat().st_size,
+                             "sha1": hashlib.sha1(path.read_bytes()).hexdigest()}
+
+    manifest_path = processed_dir / MANIFEST_REL
+    manifest_path.write_text(json.dumps(manifest, indent=1, sort_keys=True))
+    return report
+
+
+def load_manifest(root: Path) -> dict[str, dict] | None:
+    path = root / MANIFEST_REL
+    if not path.exists():
+        return None
+    return json.loads(path.read_text())

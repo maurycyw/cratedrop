@@ -1,0 +1,44 @@
+[project]
+name = "cratedrop"
+version = "0.1.0"
+description = "Headless CDJ USB builder: analyze audio and write Pioneer-native USB sticks (export.pdb + ANLZ) without Rekordbox"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = "MIT"
+dependencies = [
+    "typer>=0.12",
+    "rich>=13",
+    "numpy>=1.26",
+    "scipy>=1.12",
+    "mutagen>=1.47",
+    "soundfile>=0.12",
+    "librosa>=0.11",
+    "pyrekordbox>=0.4.4",
+    "rekordbox-pdb @ git+https://github.com/fragmede/rekordbox-pdb@ee3bac2f22ca11a5ce61eea35f8cb951c246eaef",
+]
+
+[project.optional-dependencies]
+# Heavy DSP deps, needed from M4 (real analysis) onward.
+dsp = [
+    "beat-this>=1.1.0",
+    "essentia>=2.1b6.dev1389",
+]
+
+[project.scripts]
+cratedrop = "cratedrop.cli:app"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cratedrop"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
