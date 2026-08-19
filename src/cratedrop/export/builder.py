@@ -50,7 +50,9 @@ def scan_staging(staging_dir: Path) -> list[Path]:
 
 
 def analyze_track(path: Path, processed_dir: Path) -> tuple[TrackAnalysis, bool]:
-    """Returns (analysis, was_cached)."""
+    """Returns (analysis, was_cached). Each DSP stage degrades gracefully:
+    beat tracker failure falls back to tag BPM (or 128) with a warning-level
+    confidence of 0, key/cue failures just omit that data."""
     meta = read_meta(path)
     cached = cache.load(processed_dir, meta.sha1)
     if cached is not None:
@@ -59,11 +61,25 @@ def analyze_track(path: Path, processed_dir: Path) -> tuple[TrackAnalysis, bool]
     samples = decode_mono(path, SAMPLE_RATE)
     waveform = analyze_waveform(samples)
     duration_ms = meta.duration_ms or len(samples) / SAMPLE_RATE * 1000.0
-    # Placeholder grid until real DSP (M4): tag BPM or 128, phase 0.
-    bpm = tag_bpm(path) or 128.0
-    grid = BeatGrid.constant(bpm=bpm, first_beat_ms=0.0, duration_ms=duration_ms)
 
-    analysis = TrackAnalysis(meta=meta, grid=grid, waveform=waveform,
+    from ..analysis.beats import detect_grid
+    from ..analysis.cues import place_cues
+    from ..analysis.key import detect_key
+
+    try:
+        grid = detect_grid(samples, SAMPLE_RATE, duration_ms)
+    except Exception:  # noqa: BLE001 - tracker failure must not block export
+        bpm = tag_bpm(path) or 128.0
+        grid = BeatGrid.constant(bpm=bpm, first_beat_ms=0.0,
+                                 duration_ms=duration_ms, confidence=0.0)
+    key = detect_key(samples, SAMPLE_RATE, source_path=path)
+    try:
+        cues = place_cues(grid, waveform)
+    except Exception:  # noqa: BLE001
+        cues = ()
+
+    analysis = TrackAnalysis(meta=meta, grid=grid, key=key, cues=cues,
+                             waveform=waveform,
                              analyzer_versions=dict(cache.ANALYZER_VERSIONS))
     cache.store(processed_dir, analysis)
     return analysis, False
