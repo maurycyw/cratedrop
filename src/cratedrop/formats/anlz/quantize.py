@@ -36,13 +36,20 @@ def _arrays(w: WaveformData) -> tuple[np.ndarray, ...]:
                  for x in (w.peak, w.rms, w.low, w.mid, w.high))
 
 
+def _height(rms: np.ndarray) -> np.ndarray:
+    """Transfer curve fitted per-bin against golden PWV3 heights over 216k
+    bins / 6 tracks of the user's own Rekordbox-analyzed library."""
+    return np.minimum(31, np.round(51.0 * np.power(np.maximum(rms, 0.0), 1.072))).astype(np.uint16)
+
+
 def _mono_byte(rms: np.ndarray, peak: np.ndarray) -> np.ndarray:
     """(whiteness[0-7] << 5) | height[0-31] — shared by PWV3 and PWAV."""
     with np.errstate(divide="ignore", invalid="ignore"):
-        transient = np.where(rms > 0.001, np.minimum(peak / (rms + 0.001), 4.0), 0.0)
-    height = np.minimum(31, np.round(rms * 53)).astype(np.uint16)
-    whiteness = np.minimum(7, np.round(transient * 2)).astype(np.uint16)
-    return ((whiteness & 7) << 5) | (height & 31)
+        transient = np.where(rms > 0.001, np.minimum(peak / (rms + 0.001), 8.0), 0.0)
+    # whiteness fitted to golden: quiet/steady bins get zero, only real
+    # transients whiten (the old 2x-everywhere gain read as "messy" on deck)
+    whiteness = np.clip(np.round(3.21 * transient - 3.88), 0, 7).astype(np.uint16)
+    return ((whiteness & 7) << 5) | (_height(rms) & 31)
 
 
 def pwv3_bytes(w: WaveformData) -> bytes:
@@ -52,7 +59,7 @@ def pwv3_bytes(w: WaveformData) -> bytes:
 
 def pwv5_bytes(w: WaveformData) -> bytes:
     peak, rms, low, mid, high = _arrays(w)
-    height = np.minimum(31, np.round(rms * 53)).astype(np.uint16)
+    height = _height(rms)
     r = np.minimum(7, np.round(high * 48)).astype(np.uint16)
     g = np.minimum(7, np.round(mid * 48)).astype(np.uint16)
     b = np.minimum(7, np.round(low * 48)).astype(np.uint16)
