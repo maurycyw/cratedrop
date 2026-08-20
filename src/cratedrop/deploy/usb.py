@@ -81,23 +81,41 @@ def _sha1(path: Path) -> str:
     return h.hexdigest()
 
 
-def plan_sync(processed_dir: Path, mount: Path) -> SyncPlan:
+def plan_sync(processed_dir: Path, mount: Path,
+              verify_audio: bool = False) -> SyncPlan:
+    """Plan the copy set. Hash verification (reading the file back over USB)
+    is applied only to PIONEER/ files — decks write cues/history/settings
+    there but never modify audio, so Contents/ is checked by existence+size.
+    verify_audio=True forces full hashing of audio too (paranoia mode)."""
     image = load_manifest(processed_dir)
     if image is None:
         raise FlashRefused("processed image has no manifest — run: cratedrop process")
     stick_manifest = load_manifest(mount) or {}
     plan = SyncPlan()
+    hashed: dict[str, str] = {}
+
+    def stick_sha(rel: str, path: Path) -> str:
+        if rel not in hashed:
+            hashed[rel] = _sha1(path)
+        return hashed[rel]
 
     for rel, meta in stick_manifest.items():
+        if rel.startswith("Contents/") and not verify_audio:
+            continue
         on_stick = mount / rel
         if on_stick.exists() and (on_stick.stat().st_size != meta["size"]
-                                  or _sha1(on_stick) != meta["sha1"]):
+                                  or stick_sha(rel, on_stick) != meta["sha1"]):
             plan.deck_modified.append(rel)
 
     for rel, meta in sorted(image.items()):
         on_stick = mount / rel
-        if (on_stick.exists() and on_stick.stat().st_size == meta["size"]
-                and _sha1(on_stick) == meta["sha1"]):
+        if not on_stick.exists() or on_stick.stat().st_size != meta["size"]:
+            plan.copy.append(rel)
+            continue
+        if rel.startswith("Contents/") and not verify_audio:
+            plan.unchanged += 1
+            continue
+        if stick_sha(rel, on_stick) == meta["sha1"]:
             plan.unchanged += 1
         else:
             plan.copy.append(rel)
