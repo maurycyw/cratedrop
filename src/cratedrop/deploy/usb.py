@@ -141,11 +141,14 @@ def plan_sync(processed_dir: Path, mount: Path,
 
 
 def apply_sync(processed_dir: Path, mount: Path, plan: SyncPlan,
-               prune: bool = False) -> None:
+               prune: bool = False, on_file=None) -> None:
+    """on_file(rel, size_bytes) is called before each file copies (progress)."""
     import shutil
 
     for rel in plan.copy:
         src, dest = processed_dir / rel, mount / rel
+        if on_file is not None:
+            on_file(rel, src.stat().st_size)
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
     if prune:

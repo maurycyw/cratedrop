@@ -92,10 +92,23 @@ def process(template: Path = typer.Option(
     """Analyze staged tracks and update the processed USB image."""
     from .export.builder import build_image
 
+    from rich.progress import (BarColumn, MofNCompleteColumn, Progress,
+                               TextColumn, TimeRemainingColumn)
+
     cfg = Config.load()
     staging = cfg.require("staging-dir")
     processed = cfg.require("processed-dir")
-    report = build_image(staging, processed, template_dir=template)
+    with Progress(TextColumn("processing"), BarColumn(), MofNCompleteColumn(),
+                  TimeRemainingColumn(), TextColumn("{task.fields[name]}"),
+                  console=console) as progress:
+        task = progress.add_task("process", total=None, name="scanning…")
+
+        def on_track(i: int, total: int, name: str) -> None:
+            progress.update(task, total=total, completed=i, name=name[:50])
+
+        report = build_image(staging, processed, template_dir=template,
+                             on_track=on_track)
+        progress.update(task, completed=report.tracks, name="writing database…")
     for warning in report.warnings:
         console.print(f"[yellow]warning:[/yellow] {warning}")
     console.print(f"tracks in image: [bold]{report.tracks}[/bold]  "
@@ -120,7 +133,8 @@ def flash(volume: str = typer.Option(..., "--volume", help="mounted volume name 
     processed = cfg.require("processed-dir")
     try:
         mount = usb.check_target(volume)
-        plan = usb.plan_sync(processed, mount)
+        with console.status("checking stick (verifying PIONEER files)…"):
+            plan = usb.plan_sync(processed, mount)
     except usb.FlashRefused as exc:
         console.print(f"[red]refused:[/red] {exc}")
         raise typer.Exit(1)
@@ -155,7 +169,20 @@ def flash(volume: str = typer.Option(..., "--volume", help="mounted volume name 
         saved = usb.snapshot_deck_writes(
             mount, plan, processed / ".cratedrop" / "deck-writes" / stamp)
         console.print(f"snapshotted {len(saved)} deck-modified file(s)")
-    usb.apply_sync(processed, mount, plan, prune=prune)
+    from rich.progress import (BarColumn, DownloadColumn, Progress, TextColumn,
+                               TimeRemainingColumn, TransferSpeedColumn)
+
+    total_bytes = sum((processed / rel).stat().st_size for rel in plan.copy
+                      if (processed / rel).exists())
+    with Progress(TextColumn("copying"), BarColumn(), DownloadColumn(),
+                  TransferSpeedColumn(), TimeRemainingColumn(),
+                  TextColumn("{task.fields[name]}"), console=console) as progress:
+        task = progress.add_task("flash", total=total_bytes, name="")
+
+        def on_file(rel: str, size: int) -> None:
+            progress.update(task, advance=size, name=rel.rsplit("/", 1)[-1][:40])
+
+        usb.apply_sync(processed, mount, plan, prune=prune, on_file=on_file)
     console.print(f"[green]flashed[/green] {mount}")
     if eject:
         ok = usb.eject(mount)

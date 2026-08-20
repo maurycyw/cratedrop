@@ -118,7 +118,8 @@ def _template_paths(golden_dir: Path | None) -> tuple[Path, Path]:
 
 
 def build_image(staging_dir: Path, processed_dir: Path,
-                template_dir: Path | None = None) -> BuildReport:
+                template_dir: Path | None = None, on_track=None) -> BuildReport:
+    """on_track(index, total, name) is called before each track processes."""
     report = BuildReport(analyzed=[], cached=[], copied=[], tracks=0, warnings=[])
     processed_dir.mkdir(parents=True, exist_ok=True)
 
@@ -174,7 +175,10 @@ def build_image(staging_dir: Path, processed_dir: Path,
         (processed_dir / MANIFEST_REL).write_text(
             json.dumps(snapshot, indent=1, sort_keys=True))
 
-    for src in scan_staging(staging_dir):
+    staged = scan_staging(staging_dir)
+    for i, src in enumerate(staged):
+        if on_track is not None:
+            on_track(i, len(staged), src.name)
         analysis, was_cached = analyze_track(src, processed_dir, staging_dir)
         (report.cached if was_cached else report.analyzed).append(src.name)
 
