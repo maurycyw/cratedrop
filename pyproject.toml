@@ -15,6 +15,7 @@ dependencies = [
     "librosa>=0.11",
     "pyrekordbox>=0.4.4",
     "rekordbox-pdb @ git+https://github.com/fragmede/rekordbox-pdb@ee3bac2f22ca11a5ce61eea35f8cb951c246eaef",
+    "pillow>=12.3.0",
 ]
 
 [project.optional-dependencies]

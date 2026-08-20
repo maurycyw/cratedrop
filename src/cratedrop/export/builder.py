@@ -126,6 +126,32 @@ def build_image(staging_dir: Path, processed_dir: Path,
     builder = PdbBuilder.from_template(template_pdb)
     taken = {t.file_path.lower() for t in builder.db.tracks}
     manifest: dict[str, dict] = {}
+    art_ids: dict[str, int] = {}  # image sha1 -> artwork row id
+
+    def track_artwork(src: Path) -> int:
+        from ..audio.artwork import extract_embedded_art, render_pioneer_jpegs
+
+        raw = extract_embedded_art(src)
+        if raw is None:
+            return 0
+        sha = hashlib.sha1(raw).hexdigest()
+        if sha in art_ids:
+            return art_ids[sha]
+        rendered = render_pioneer_jpegs(raw)
+        if rendered is None:
+            return 0
+        small, medium = rendered
+        n = len(art_ids) + 1
+        art_rel = f"PIONEER/Artwork/00001/a{n}.jpg"
+        for rel, data in ((art_rel, small),
+                          (f"PIONEER/Artwork/00001/a{n}_m.jpg", medium)):
+            dest = processed_dir / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(data)
+            manifest[rel] = {"size": len(data),
+                             "sha1": hashlib.sha1(data).hexdigest()}
+        art_ids[sha] = builder.get_or_create_artwork("/" + art_rel)
+        return art_ids[sha]
 
     playlist_id = builder.create_playlist("cratedrop")
 
@@ -170,7 +196,8 @@ def build_image(staging_dir: Path, processed_dir: Path,
             manifest[rel] = {"size": path.stat().st_size,
                              "sha1": hashlib.sha1(path.read_bytes()).hexdigest()}
 
-        track_id = builder.add_track(analysis, rel_audio, anlz_dat_rel)
+        track_id = builder.add_track(analysis, rel_audio, anlz_dat_rel,
+                                     artwork_id=track_artwork(src))
         builder.add_to_playlist(playlist_id, track_id)
         report.tracks += 1
         if not was_cached and report.tracks % 25 == 0:
@@ -198,7 +225,7 @@ def build_image(staging_dir: Path, processed_dir: Path,
     # "Contents/CADZOW/x.wav" on disk may satisfy a "Contents/Cadzow/x.wav"
     # manifest entry.
     manifest_fold = {k.lower() for k in manifest}
-    for sub in ("Contents", "PIONEER/USBANLZ"):
+    for sub in ("Contents", "PIONEER/USBANLZ", "PIONEER/Artwork"):
         root = processed_dir / sub
         if not root.exists():
             continue

@@ -35,8 +35,24 @@ class PdbBuilder:
     def from_template(cls, template_path: Path) -> "PdbBuilder":
         return cls(PdbEditor.from_file(template_path))
 
+    def get_or_create_artwork(self, artwork_path: str) -> int:
+        """Artwork rows share the u32-id + string row shape with genres, but
+        their string field is `path`, so the editor's name-keyed _get_or_create
+        can't be reused directly."""
+        from .vendor_api import TableType
+
+        ed = self._editor
+        rows = ed.db.rows(TableType.ARTWORK)
+        for row in rows:
+            if row.path == artwork_path:
+                return row.id
+        new_id = max((r.id for r in rows), default=0) + 1
+        row_bytes, alloc, shift_at = ed._build_named_row(new_id, artwork_path)  # noqa: SLF001
+        ed._append_row(TableType.ARTWORK, row_bytes, alloc, index_shift_at=shift_at)  # noqa: SLF001
+        return new_id
+
     def add_track(self, analysis: TrackAnalysis, usb_audio_path: str,
-                  anlz_dat_path: str) -> int:
+                  anlz_dat_path: str, artwork_id: int = 0) -> int:
         """anlz_dat_path: USB-relative ANLZ0000.DAT path with leading slash."""
         meta = analysis.meta
         return self._editor.add_track(
@@ -54,6 +70,7 @@ class PdbBuilder:
             sample_rate=meta.sample_rate,
             file_size=meta.file_size,
             track_number=meta.track_no,
+            artwork_id=artwork_id,
         )
 
     def create_playlist(self, name: str) -> int:
