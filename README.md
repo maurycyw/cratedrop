@@ -15,6 +15,7 @@ cratedrop config set staging-dir ~/Music/cratedrop/staging
 cratedrop config set processed-dir ~/Music/cratedrop/processed
 # drop audio files into the staging dir, then:
 cratedrop process              # analyze + build/update the USB image
+cratedrop watch                # or: keep running and auto-process new drops
 cratedrop flash --volume DJ    # sync image to /Volumes/DJ (harvests deck-written cues first)
 ```
 

@@ -221,6 +221,27 @@ def _print_harvest(report) -> None:
 
 
 @app.command()
+def watch(interval: float = typer.Option(10.0, "--interval", help="poll seconds"),
+          settle: float = typer.Option(15.0, "--settle", help="quiet seconds before a new file is ingested")) -> None:
+    """Watch the staging dir; rebuild the image whenever new audio settles."""
+    from .watch import watch as run_watch
+
+    cfg = Config.load()
+    staging = cfg.require("staging-dir")
+    processed = cfg.require("processed-dir")
+
+    def on_event(msg: str) -> None:
+        import datetime
+        console.print(f"[dim]{datetime.datetime.now():%H:%M:%S}[/dim] {msg}")
+
+    try:
+        run_watch(staging, processed, interval=interval,
+                  quiet_seconds=settle, on_event=on_event)
+    except KeyboardInterrupt:
+        console.print("\nstopped")
+
+
+@app.command()
 def override(file: Path = typer.Argument(help="audio file (staging or anywhere)"),
              bpm: float = typer.Option(None, "--bpm"),
              first_beat_ms: float = typer.Option(None, "--first-beat-ms"),
