@@ -45,8 +45,11 @@ class BuildReport:
 
 
 def scan_staging(staging_dir: Path) -> list[Path]:
-    return sorted(p for p in staging_dir.rglob("*")
-                  if p.is_file() and is_audio_file(p) and not p.name.startswith("."))
+    """Newest first (file mtime): with a massive library, an interrupted
+    process/sync has still covered the most recent tracks."""
+    files = [p for p in staging_dir.rglob("*")
+             if p.is_file() and is_audio_file(p) and not p.name.startswith(".")]
+    return sorted(files, key=lambda p: (-p.stat().st_mtime, p.name))
 
 
 def analyze_track(path: Path, processed_dir: Path,
@@ -126,6 +129,25 @@ def build_image(staging_dir: Path, processed_dir: Path,
 
     playlist_id = builder.create_playlist("cratedrop")
 
+    def checkpoint() -> None:
+        """Persist a valid image right now: an interrupted run over a huge
+        library still leaves the newest tracks flashable."""
+        pdb_dir = processed_dir / "PIONEER" / "rekordbox"
+        pdb_dir.mkdir(parents=True, exist_ok=True)
+        builder.save(pdb_dir / "export.pdb")
+        if template_ext.exists() and not (pdb_dir / "exportExt.pdb").exists():
+            shutil.copy2(template_ext, pdb_dir / "exportExt.pdb")
+        snapshot = dict(manifest)
+        for name in ("export.pdb", "exportExt.pdb"):
+            path = pdb_dir / name
+            if path.exists():
+                snapshot[f"PIONEER/rekordbox/{name}"] = {
+                    "size": path.stat().st_size,
+                    "sha1": hashlib.sha1(path.read_bytes()).hexdigest()}
+        (processed_dir / MANIFEST_REL).parent.mkdir(parents=True, exist_ok=True)
+        (processed_dir / MANIFEST_REL).write_text(
+            json.dumps(snapshot, indent=1, sort_keys=True))
+
     for src in scan_staging(staging_dir):
         analysis, was_cached = analyze_track(src, processed_dir, staging_dir)
         (report.cached if was_cached else report.analyzed).append(src.name)
@@ -151,6 +173,8 @@ def build_image(staging_dir: Path, processed_dir: Path,
         track_id = builder.add_track(analysis, rel_audio, anlz_dat_rel)
         builder.add_to_playlist(playlist_id, track_id)
         report.tracks += 1
+        if not was_cached and report.tracks % 25 == 0:
+            checkpoint()
 
     pdb_dir = processed_dir / "PIONEER" / "rekordbox"
     pdb_dir.mkdir(parents=True, exist_ok=True)

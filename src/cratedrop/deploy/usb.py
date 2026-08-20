@@ -105,6 +105,20 @@ def plan_sync(processed_dir: Path, mount: Path) -> SyncPlan:
     for rel in sorted(set(stick_manifest) - set(image)):
         if (mount / rel).exists():
             plan.delete.append(rel)
+
+    # Copy order: newest audio first (an interrupted flash of a huge library
+    # has still moved the most recent tracks), then analysis files, then the
+    # database last so the stick's pdb never references audio not yet copied.
+    def order(rel: str) -> tuple:
+        if rel.startswith("Contents/"):
+            src = processed_dir / rel
+            mtime = src.stat().st_mtime if src.exists() else 0
+            return (0, -mtime, rel)
+        if "USBANLZ" in rel:
+            return (1, 0, rel)
+        return (2, 0, rel)
+
+    plan.copy.sort(key=order)
     return plan
 
 
