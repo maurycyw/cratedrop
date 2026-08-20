@@ -221,6 +221,66 @@ def _print_harvest(report) -> None:
 
 
 @app.command()
+def enrich(min_score: float = typer.Option(0.72, "--min-score"),
+           dry_run: bool = typer.Option(False, "--dry-run"),
+           force: bool = typer.Option(False, "--force", help="re-query tracks that already have a sidecar")) -> None:
+    """Fill missing artwork/metadata from Deezer/iTunes (never overwrites
+    existing tags, folder names, or manual data). Run process afterwards."""
+    import json as _json
+
+    from rich.table import Table
+
+    from . import enrich as en
+    from .audio.artwork import extract_embedded_art
+    from .cache import cache_dir
+    from .model import TrackMeta
+
+    cfg = Config.load()
+    processed = cfg.require("processed-dir")
+    entries = sorted(cache_dir(processed).glob("*.json"))
+    if not entries:
+        console.print("no analyzed tracks yet — run: cratedrop process")
+        raise typer.Exit(1)
+
+    table = Table(title="enrichment")
+    for col in ("track", "needs", "match", "score", "src"):
+        table.add_column(col, overflow="fold")
+    found = skipped = 0
+    for entry in entries:
+        raw = _json.loads(entry.read_text())
+        meta = TrackMeta(**raw["meta"])
+        src_path = Path(meta.source_path)
+        needs = []
+        if not meta.artist:
+            needs.append("artist")
+        if src_path.exists() and extract_embedded_art(src_path) is None \
+                and not en.art_path(processed, meta.sha1).exists():
+            needs.append("art")
+        if not needs:
+            continue
+        if en.load(processed, meta.sha1) is not None and not force:
+            skipped += 1
+            continue
+        match = en.find_match(meta, min_score=min_score)
+        if match is None:
+            table.add_row(meta.title[:40], "+".join(needs),
+                          "[dim]no confident match[/dim]", "", "")
+            continue
+        art = None
+        if not dry_run:
+            art = en.download(match.art_url)
+            en.store(processed, meta.sha1, match, art)
+        table.add_row(meta.title[:40], "+".join(needs),
+                      f"{match.artist} — {match.title}",
+                      f"{match.score:.2f}", match.source)
+        found += 1
+    console.print(table)
+    console.print(f"{found} match(es)" + (f", {skipped} already enriched (use --force to redo)" if skipped else ""))
+    if found and not dry_run:
+        console.print("run [bold]cratedrop process[/bold] to apply to the image")
+
+
+@app.command()
 def watch(interval: float = typer.Option(10.0, "--interval", help="poll seconds"),
           settle: float = typer.Option(15.0, "--settle", help="quiet seconds before a new file is ingested")) -> None:
     """Watch the staging dir; rebuild the image whenever new audio settles."""

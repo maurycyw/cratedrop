@@ -58,6 +58,15 @@ def analyze_track(path: Path, processed_dir: Path,
     beat tracker failure falls back to tag BPM (or 128) with a warning-level
     confidence of 0, key/cue failures just omit that data."""
     meta = read_meta(path, base_dir=staging_dir)
+    if not meta.artist:
+        # enrichment fills blanks only — tags/folders/manual always win
+        from dataclasses import replace as _replace
+
+        from .. import enrich
+        enr = enrich.load(processed_dir, meta.sha1)
+        if enr and enr.get("artist"):
+            meta = _replace(meta, artist=enr["artist"],
+                            album=meta.album or enr.get("album", ""))
     cached = cache.load(processed_dir, meta.sha1)
     if cached is not None:
         if cached.meta != meta:
@@ -129,10 +138,15 @@ def build_image(staging_dir: Path, processed_dir: Path,
     manifest: dict[str, dict] = {}
     art_ids: dict[str, int] = {}  # image sha1 -> artwork row id
 
-    def track_artwork(src: Path) -> int:
+    def track_artwork(src: Path, sha: str) -> int:
+        from .. import enrich
         from ..audio.artwork import extract_embedded_art, render_pioneer_jpegs
 
         raw = extract_embedded_art(src)
+        if raw is None:
+            # enrichment fallback: web-fetched art cached by cratedrop enrich
+            enr_art = enrich.art_path(processed_dir, sha)
+            raw = enr_art.read_bytes() if enr_art.exists() else None
         if raw is None:
             return 0
         sha = hashlib.sha1(raw).hexdigest()
@@ -201,7 +215,7 @@ def build_image(staging_dir: Path, processed_dir: Path,
                              "sha1": hashlib.sha1(path.read_bytes()).hexdigest()}
 
         track_id = builder.add_track(analysis, rel_audio, anlz_dat_rel,
-                                     artwork_id=track_artwork(src))
+                                     artwork_id=track_artwork(src, analysis.meta.sha1))
         builder.add_to_playlist(playlist_id, track_id)
         report.tracks += 1
         if not was_cached and report.tracks % 25 == 0:
