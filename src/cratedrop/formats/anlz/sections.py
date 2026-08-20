@@ -92,11 +92,15 @@ def build_pqtz(beats: list[tuple[int, float]], bpm: float) -> bytes:
     return _section(b"PQTZ", b"".join(parts), 24)
 
 
-def build_pqt2(beats: list[tuple[int, float]], bpm: float) -> bytes:
-    """Extended beatgrid (Rekordbox 6+). len_header=56; body entries are
-    approximated (time_ms mod 1000) — sufficient for correct display, the
-    grid itself comes from the anchors + PQTZ."""
+def build_pqt2(beats: list[tuple[int, float]], bpm: float,
+               values: list[int] | None = None) -> bytes:
+    """Extended beatgrid (Rekordbox 6+). len_header=56; body is one u16 per
+    beat = peak amplitude at that beat in thousandths (0-1000). Decoded from
+    the golden click capture: constant-amplitude audio -> constant 954 =
+    round(peak 0.954 * 1000). The grid itself comes from the anchors + PQTZ."""
     ec = len(beats)
+    if values is None:
+        values = [800] * ec  # neutral mid-high amplitude when unknown
     tempo = round((bpm or 128.0) * 100) & 0xFFFF
     hdr = bytearray(56)
     hdr[0:4] = b"PQT2"
@@ -109,7 +113,8 @@ def build_pqt2(beats: list[tuple[int, float]], bpm: float) -> bytes:
         bib, t = beats[-1]
         hdr[32:40] = _u16(bib) + _u16(tempo) + _u32(round(t))
     hdr[40:44] = _u32(ec)
-    body = b"".join(_u16(round(t) % 1000) for _, t in beats)
+    body = b"".join(_u16(max(0, min(1000, v))) for v in values[:ec])
+    body += _u16(800) * max(0, ec - len(values))
     return bytes(hdr) + body
 
 

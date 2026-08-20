@@ -54,6 +54,21 @@ def _beats(analysis: TrackAnalysis) -> list[tuple[int, float]]:
     return [(b.beat_in_bar, b.time_ms) for b in analysis.grid.beats]
 
 
+def _beat_amplitudes(analysis: TrackAnalysis) -> list[int] | None:
+    """Per-beat peak amplitude in thousandths (PQT2 body semantics)."""
+    if analysis.waveform is None or analysis.grid is None:
+        return None
+    peak = analysis.waveform.peak
+    bps = analysis.waveform.bins_per_second
+    interval_bins = max(1, round(60.0 / analysis.grid.bpm * bps))
+    out = []
+    for b in analysis.grid.beats:
+        i0 = min(len(peak) - 1, max(0, int(b.time_ms / 1000.0 * bps)))
+        window = peak[i0:i0 + interval_bins] or peak[i0:i0 + 1]
+        out.append(round(max(0.0, min(1.0, max(window))) * 1000))
+    return out
+
+
 def build_dat(analysis: TrackAnalysis, usb_file_path: str) -> bytes:
     bpm = analysis.grid.bpm if analysis.grid else 0.0
     hot = [(n, round(c.time_ms), _color_hex(c))
@@ -85,7 +100,8 @@ def build_ext(analysis: TrackAnalysis, usb_file_path: str) -> bytes:
     body.append(sections.build_pcob_slot(0, []))
     body.append(sections.build_pco2_slot(1, all_hot))
     body.append(sections.build_pco2_slot(0, []))
-    body.append(sections.build_pqt2(_beats(analysis), bpm))
+    body.append(sections.build_pqt2(_beats(analysis), bpm,
+                                    values=_beat_amplitudes(analysis)))
     if analysis.waveform:
         body.append(sections.build_pwv5(quantize.pwv5_bytes(analysis.waveform)))
         body.append(sections.build_pwv4(quantize.pwv4_bytes(analysis.waveform)))
