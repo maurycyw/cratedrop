@@ -33,7 +33,31 @@ def sha1_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def read_meta(path: Path) -> TrackMeta:
+_NON_NAMES = {"unknownalbum", "unknown album", "unknownartist", "unknown artist",
+               "various", "various artists", "music", "tracks", "audio"}
+
+
+def _folder_fallbacks(path: Path, base_dir: Path | None) -> tuple[str, str]:
+    """(artist, album) derived from <base>/<Artist>/<Album>/file layout."""
+    if base_dir is None:
+        return "", ""
+    try:
+        parts = path.resolve().relative_to(base_dir.resolve()).parts
+    except ValueError:
+        return "", ""
+
+    def clean(name: str) -> str:
+        return "" if name.lower().strip() in _NON_NAMES else name.strip()
+
+    artist = clean(parts[0]) if len(parts) >= 2 else ""
+    album = clean(parts[1]) if len(parts) >= 3 else ""
+    return artist, album
+
+
+def read_meta(path: Path, base_dir: Path | None = None) -> TrackMeta:
+    """Metadata with a fallback chain: file tags -> staging folder structure
+    (<base>/<Artist>/<Album>/...) -> 'Artist - Title' filename split. Most
+    DJ libraries are folder-organized WAVs with no tags at all."""
     audio = mutagen.File(path, easy=True)
     tags = audio.tags if audio else None
     info = audio.info if audio else None
@@ -52,11 +76,23 @@ def read_meta(path: Path) -> TrackMeta:
         except Exception:  # noqa: BLE001 - keep 0, analysis falls back to PCM length
             pass
 
+    artist = _first(tags, "artist", "albumartist")
+    album = _first(tags, "album")
+    if not artist or not album:
+        folder_artist, folder_album = _folder_fallbacks(path, base_dir)
+        artist = artist or folder_artist
+        album = album or folder_album
+    if not artist and " - " in title:
+        # untagged, unfoldered "Artist - Title.wav" convention
+        left, _, right = title.partition(" - ")
+        if left.strip() and right.strip():
+            artist, title = left.strip(), right.strip()
+
     return TrackMeta(
         source_path=str(path),
         title=title,
-        artist=_first(tags, "artist", "albumartist"),
-        album=_first(tags, "album"),
+        artist=artist,
+        album=album,
         genre=_first(tags, "genre"),
         year=_int(_first(tags, "date", "year")),
         track_no=_int(_first(tags, "tracknumber")),

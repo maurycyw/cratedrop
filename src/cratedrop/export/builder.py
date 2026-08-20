@@ -49,13 +49,20 @@ def scan_staging(staging_dir: Path) -> list[Path]:
                   if p.is_file() and is_audio_file(p) and not p.name.startswith("."))
 
 
-def analyze_track(path: Path, processed_dir: Path) -> tuple[TrackAnalysis, bool]:
+def analyze_track(path: Path, processed_dir: Path,
+                  staging_dir: Path | None = None) -> tuple[TrackAnalysis, bool]:
     """Returns (analysis, was_cached). Each DSP stage degrades gracefully:
     beat tracker failure falls back to tag BPM (or 128) with a warning-level
     confidence of 0, key/cue failures just omit that data."""
-    meta = read_meta(path)
+    meta = read_meta(path, base_dir=staging_dir)
     cached = cache.load(processed_dir, meta.sha1)
     if cached is not None:
+        if cached.meta != meta:
+            # metadata rules changed or tags were edited — refresh without
+            # discarding the (expensive) DSP results
+            from dataclasses import replace
+            cached = replace(cached, meta=meta)
+            cache.store(processed_dir, cached)
         return cached, True
 
     samples = decode_mono(path, SAMPLE_RATE)
@@ -120,7 +127,7 @@ def build_image(staging_dir: Path, processed_dir: Path,
     playlist_id = builder.create_playlist("cratedrop")
 
     for src in scan_staging(staging_dir):
-        analysis, was_cached = analyze_track(src, processed_dir)
+        analysis, was_cached = analyze_track(src, processed_dir, staging_dir)
         (report.cached if was_cached else report.analyzed).append(src.name)
 
         rel_audio = dedupe(usb_audio_path(analysis.meta), taken)
@@ -159,6 +166,25 @@ def build_image(staging_dir: Path, processed_dir: Path,
 
     manifest_path = processed_dir / MANIFEST_REL
     manifest_path.write_text(json.dumps(manifest, indent=1, sort_keys=True))
+
+    # GC: the processed dir is fully machine-managed, so any Contents/USBANLZ
+    # file not in the fresh manifest is an orphan from renamed paths (e.g.
+    # after a metadata fix changed the layout) — delete it and empty dirs.
+    # Compare case-insensitively: the filesystem folds case (macOS, FAT), so
+    # "Contents/CADZOW/x.wav" on disk may satisfy a "Contents/Cadzow/x.wav"
+    # manifest entry.
+    manifest_fold = {k.lower() for k in manifest}
+    for sub in ("Contents", "PIONEER/USBANLZ"):
+        root = processed_dir / sub
+        if not root.exists():
+            continue
+        for f in root.rglob("*"):
+            if f.is_file() and str(f.relative_to(processed_dir)).lower() not in manifest_fold:
+                f.unlink()
+        for d in sorted((p for p in root.rglob("*") if p.is_dir()),
+                        key=lambda p: -len(p.parts)):
+            if not any(d.iterdir()):
+                d.rmdir()
     return report
 
 
