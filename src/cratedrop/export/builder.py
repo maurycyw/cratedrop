@@ -29,6 +29,33 @@ from ..model import BeatGrid, TrackAnalysis
 from .layout import dedupe, usb_audio_path
 
 MANIFEST_REL = "PIONEER/.cratedrop.json"
+INGEST_DATES_REL = ".cratedrop/ingest-dates.json"
+
+
+def _load_ingest_dates(processed_dir: Path) -> dict[str, str]:
+    path = processed_dir / INGEST_DATES_REL
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _ingest_date(dates: dict[str, str], sha: str, first_run: bool) -> str:
+    """ISO date a track was first ingested; stable once recorded. Tracks that
+    existed before this feature (the store's very first run) get "" — no
+    retroactive date playlists, only tracks added from now on."""
+    if sha in dates:
+        return dates[sha]
+    import datetime
+    dates[sha] = "" if first_run else datetime.date.today().isoformat()
+    return dates[sha]
+
+
+def _playlist_name(iso_date: str) -> str:
+    y, m, d = iso_date.split("-")
+    return f"{m}/{d}/{y}"
 
 # Default seed: a genuine zero-track export authored by Rekordbox 7.2.18
 # (golden 'empty' capture) — keeps every undocumented header field bit-true.
@@ -169,6 +196,9 @@ def build_image(staging_dir: Path, processed_dir: Path,
         return art_ids[sha]
 
     playlist_id = builder.create_playlist("cratedrop")
+    ingest_dates = _load_ingest_dates(processed_dir)
+    first_ingest_run = not ingest_dates
+    by_date: dict[str, list[int]] = {}
 
     def checkpoint() -> None:
         """Persist a valid image right now: an interrupted run over a huge
@@ -217,9 +247,21 @@ def build_image(staging_dir: Path, processed_dir: Path,
         track_id = builder.add_track(analysis, rel_audio, anlz_dat_rel,
                                      artwork_id=track_artwork(src, analysis.meta.sha1))
         builder.add_to_playlist(playlist_id, track_id)
+        date = _ingest_date(ingest_dates, analysis.meta.sha1, first_ingest_run)
+        if date:
+            by_date.setdefault(date, []).append(track_id)
         report.tracks += 1
         if not was_cached and report.tracks % 25 == 0:
             checkpoint()
+
+    # date-added playlists, newest first (MM/DD/YYYY, one per ingest day)
+    for date in sorted(by_date, reverse=True):
+        pid = builder.create_playlist(_playlist_name(date))
+        for track_id in by_date[date]:
+            builder.add_to_playlist(pid, track_id)
+    dates_path = processed_dir / INGEST_DATES_REL
+    dates_path.parent.mkdir(parents=True, exist_ok=True)
+    dates_path.write_text(json.dumps(ingest_dates, indent=1, sort_keys=True))
 
     pdb_dir = processed_dir / "PIONEER" / "rekordbox"
     pdb_dir.mkdir(parents=True, exist_ok=True)
