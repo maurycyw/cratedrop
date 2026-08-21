@@ -64,8 +64,11 @@ def scan_once(staging_dir: Path, processed_dir: Path, state: WatchState,
     unsettled = 0
     for path, (size, mtime) in current.items():
         prev = state.last_scan.get(path)
-        if (size > 0 and prev == (size, mtime)
-                and now - mtime >= quiet_seconds):
+        # A future mtime (UTC-stamped downloads, other machines' clocks) would
+        # never age past the quiet window — size stability across scans is the
+        # settle signal in that case.
+        quiet_ok = (now - mtime >= quiet_seconds) or (mtime > now)
+        if size > 0 and prev == (size, mtime) and quiet_ok:
             settled[path] = (size, mtime)
         else:
             unsettled += 1
@@ -111,6 +114,11 @@ def watch(staging_dir: Path, processed_dir: Path, interval: float = 10.0,
              f"poll {interval:.0f}s, settle {quiet_seconds:.0f}s"
              + (", building initial image" if not has_image else "") + ")")
     while True:
-        scan_once(staging_dir, processed_dir, state,
-                  quiet_seconds=quiet_seconds, on_event=on_event)
+        try:
+            scan_once(staging_dir, processed_dir, state,
+                      quiet_seconds=quiet_seconds, on_event=on_event)
+        except KeyboardInterrupt:
+            raise
+        except Exception as exc:  # noqa: BLE001 - one bad build must not kill the watcher
+            on_event(f"error (watcher continues): {type(exc).__name__}: {exc}")
         time.sleep(interval)

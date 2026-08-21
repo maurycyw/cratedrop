@@ -74,6 +74,23 @@ def test_growing_file_never_ingested(tmp_path):
     assert load_manifest(processed) is not None
 
 
+def test_future_mtime_settles_on_size_stability(tmp_path):
+    """UTC-stamped downloads carry mtimes hours in the future; they must
+    settle via size stability instead of waiting to age."""
+    staging = tmp_path / "staging"
+    processed = tmp_path / "processed"
+    staging.mkdir()
+    dest = staging / "from_the_future.wav"
+    shutil.copy2(CLICK, dest)
+    future = time.time() + 7 * 3600
+    os.utime(dest, (future, future))
+    state = WatchState()
+
+    assert scan_once(staging, processed, state, quiet_seconds=300) == "waiting"
+    assert scan_once(staging, processed, state, quiet_seconds=300) == "built"
+    assert load_manifest(processed) is not None
+
+
 def test_lock_prevents_concurrent_build(tmp_path):
     staging = tmp_path / "staging"
     processed = tmp_path / "processed"
