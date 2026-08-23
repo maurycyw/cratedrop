@@ -78,3 +78,17 @@ def test_flash_plan_and_apply(image, tmp_path):
     pdb_on_stick.write_bytes(pdb_on_stick.read_bytes() + b"\x00")
     plan3 = plan_sync(processed, mount)
     assert "PIONEER/rekordbox/export.pdb" in plan3.deck_modified
+
+
+def test_flash_removes_stale_wal_siblings(image, tmp_path):
+    processed, _ = image
+    mount = tmp_path / "stick_with_stale_wal"
+    (mount / "PIONEER" / "rekordbox").mkdir(parents=True)
+    stale_wal = mount / "PIONEER" / "rekordbox" / "exportLibrary.db-wal"
+    stale_shm = mount / "PIONEER" / "rekordbox" / "exportLibrary.db-shm"
+    stale_wal.write_bytes(b"stale")
+    stale_shm.write_bytes(b"stale")
+    plan = plan_sync(processed, mount)
+    apply_sync(processed, mount, plan)
+    assert (mount / "PIONEER" / "rekordbox" / "exportLibrary.db").exists()
+    assert not stale_wal.exists() and not stale_shm.exists()

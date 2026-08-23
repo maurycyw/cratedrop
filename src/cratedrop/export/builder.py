@@ -24,6 +24,7 @@ from ..analysis.waveform import SAMPLE_RATE, analyze_waveform
 from ..audio.decode import decode_mono, is_audio_file
 from ..audio.tags import read_meta, tag_bpm
 from ..formats.anlz import writer as anlz_writer
+from ..formats.onelibrary import OneLibTrack, write_onelibrary
 from ..formats.pdb.builder import PdbBuilder
 from ..model import BeatGrid, TrackAnalysis
 from .layout import dedupe, usb_audio_path
@@ -51,6 +52,12 @@ def _ingest_date(dates: dict[str, str], sha: str, first_run: bool) -> str:
     import datetime
     dates[sha] = "" if first_run else datetime.date.today().isoformat()
     return dates[sha]
+
+
+def _fallback_date(src: Path) -> str:
+    """dateAdded for pre-feature tracks (no ingest stamp): file mtime."""
+    import datetime
+    return datetime.date.fromtimestamp(src.stat().st_mtime).isoformat()
 
 
 def _playlist_name(iso_date: str) -> str:
@@ -164,19 +171,22 @@ def build_image(staging_dir: Path, processed_dir: Path,
     taken = {t.file_path.lower() for t in builder.db.tracks}
     manifest: dict[str, dict] = {}
     art_ids: dict[str, int] = {}  # image sha1 -> artwork row id
+    art_b_rel: dict[str, str] = {}  # image sha1 -> OneLibrary image path
+    track_art_sha: dict[str, str] = {}  # track sha1 -> image sha1
 
-    def track_artwork(src: Path, sha: str) -> int:
+    def track_artwork(src: Path, track_sha: str) -> int:
         from .. import enrich
         from ..audio.artwork import extract_embedded_art, render_pioneer_jpegs
 
         raw = extract_embedded_art(src)
         if raw is None:
             # enrichment fallback: web-fetched art cached by cratedrop enrich
-            enr_art = enrich.art_path(processed_dir, sha)
+            enr_art = enrich.art_path(processed_dir, track_sha)
             raw = enr_art.read_bytes() if enr_art.exists() else None
         if raw is None:
             return 0
         sha = hashlib.sha1(raw).hexdigest()
+        track_art_sha[track_sha] = sha
         if sha in art_ids:
             return art_ids[sha]
         rendered = render_pioneer_jpegs(raw)
@@ -185,8 +195,12 @@ def build_image(staging_dir: Path, processed_dir: Path,
         small, medium = rendered
         n = len(art_ids) + 1
         art_rel = f"PIONEER/Artwork/00001/a{n}.jpg"
+        # OneLibrary references the same art under a 'b' prefix
+        art_b_rel[sha] = f"/PIONEER/Artwork/00001/b{n}.jpg"
         for rel, data in ((art_rel, small),
-                          (f"PIONEER/Artwork/00001/a{n}_m.jpg", medium)):
+                          (f"PIONEER/Artwork/00001/a{n}_m.jpg", medium),
+                          (f"PIONEER/Artwork/00001/b{n}.jpg", small),
+                          (f"PIONEER/Artwork/00001/b{n}_m.jpg", medium)):
             dest = processed_dir / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(data)
@@ -199,6 +213,8 @@ def build_image(staging_dir: Path, processed_dir: Path,
     ingest_dates = _load_ingest_dates(processed_dir)
     first_ingest_run = not ingest_dates
     by_date: dict[str, list[int]] = {}
+    onelib_tracks: list[OneLibTrack] = []
+    onelib_index: dict[int, int] = {}  # pdb track id -> onelib_tracks index
 
     def checkpoint() -> None:
         """Persist a valid image right now: an interrupted run over a huge
@@ -250,6 +266,11 @@ def build_image(staging_dir: Path, processed_dir: Path,
         date = _ingest_date(ingest_dates, analysis.meta.sha1, first_ingest_run)
         if date:
             by_date.setdefault(date, []).append(track_id)
+        onelib_tracks.append(OneLibTrack(
+            analysis=analysis, usb_path=rel_audio, anlz_dat_path=anlz_dat_rel,
+            image_path=art_b_rel.get(track_art_sha.get(analysis.meta.sha1, ""), None),
+            date_added=date or _fallback_date(src)))
+        onelib_index[track_id] = len(onelib_tracks) - 1
         report.tracks += 1
         if not was_cached and report.tracks % 25 == 0:
             checkpoint()
@@ -268,7 +289,13 @@ def build_image(staging_dir: Path, processed_dir: Path,
     builder.save(pdb_dir / "export.pdb")
     if template_ext.exists():
         shutil.copy2(template_ext, pdb_dir / "exportExt.pdb")
-    for name in ("export.pdb", "exportExt.pdb"):
+    # OneLibrary (XDJ-AZ / Opus Quad / CDJ-3000X): same tracks, same playlists
+    onelib_playlists = [("cratedrop", [onelib_index[t] for t in onelib_index])]
+    for date in sorted(by_date, reverse=True):
+        onelib_playlists.append((_playlist_name(date),
+                                 [onelib_index[t] for t in by_date[date]]))
+    written = write_onelibrary(pdb_dir, onelib_tracks, onelib_playlists)
+    for name in ["export.pdb", "exportExt.pdb"] + [p.name for p in written]:
         path = pdb_dir / name
         if path.exists():
             rel = f"PIONEER/rekordbox/{name}"

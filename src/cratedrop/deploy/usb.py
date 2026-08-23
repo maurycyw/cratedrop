@@ -145,12 +145,21 @@ def apply_sync(processed_dir: Path, mount: Path, plan: SyncPlan,
     """on_file(rel, size_bytes) is called before each file copies (progress)."""
     import shutil
 
+    image = load_manifest(processed_dir) or {}
     for rel in plan.copy:
         src, dest = processed_dir / rel, mount / rel
         if on_file is not None:
             on_file(rel, src.stat().st_size)
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
+        if rel.endswith(".db"):
+            # a stale SQLite write-ahead log from a DIFFERENT copy of this db
+            # (e.g. Rekordbox's leftover exportLibrary.db-wal) would be
+            # replayed into ours and corrupt it — drop siblings we don't ship
+            for suffix in ("-wal", "-shm", "-journal"):
+                sibling = mount / (rel + suffix)
+                if sibling.exists() and (rel + suffix) not in image:
+                    sibling.unlink()
     if prune:
         for rel in plan.delete:
             (mount / rel).unlink(missing_ok=True)
