@@ -280,6 +280,49 @@ def enrich(min_score: float = typer.Option(0.72, "--min-score"),
         console.print("run [bold]cratedrop process[/bold] to apply to the image")
 
 
+settings_app = typer.Typer(no_args_is_help=True,
+                           help="Deck settings files (waveform color mode, jog mode...) shipped on every stick.")
+app.add_typer(settings_app, name="settings")
+
+
+@settings_app.command("import")
+def settings_import(source: str = typer.Argument(help="volume name (e.g. MOMO) or a PIONEER dir path")) -> None:
+    """Copy DEVSETTING/MYSETTING files from a Rekordbox-exported stick into config."""
+    import shutil
+
+    from .config import CONFIG_DIR
+    from .export.builder import SETTINGS_FILES
+
+    root = Path(source).expanduser()
+    if not root.exists():
+        root = Path("/Volumes") / source
+    pioneer = root if (root / "DEVSETTING.DAT").exists() or root.name == "PIONEER" else root / "PIONEER"
+    dest = CONFIG_DIR / "mysettings"
+    dest.mkdir(parents=True, exist_ok=True)
+    got = []
+    for name in SETTINGS_FILES:
+        src = pioneer / name
+        if src.exists():
+            shutil.copy2(src, dest / name)
+            got.append(name)
+    if not got:
+        console.print(f"[red]no settings files found under {pioneer}[/red]")
+        raise typer.Exit(1)
+    console.print(f"imported {', '.join(got)} -> {dest}")
+    console.print("run [bold]cratedrop process[/bold] then flash to ship them")
+
+
+@settings_app.command("show")
+def settings_show() -> None:
+    from .config import CONFIG_DIR
+    from .export.builder import SETTINGS_FILES
+
+    dest = CONFIG_DIR / "mysettings"
+    for name in SETTINGS_FILES:
+        path = dest / name
+        console.print(f"{name}: {'[green]present[/green]' if path.exists() else '[dim]absent[/dim]'}")
+
+
 @app.command()
 def watch(interval: float = typer.Option(10.0, "--interval", help="poll seconds"),
           settle: float = typer.Option(15.0, "--settle", help="quiet seconds before a new file is ingested")) -> None:

@@ -40,3 +40,18 @@ def test_image_writes_onelibrary(tmp_path):
     con = connect(db)
     assert con.execute("SELECT COUNT(*) FROM menuItem").fetchone()[0] == 27
     con.close()
+
+
+def test_image_ships_imported_deck_settings(tmp_path, monkeypatch):
+    import cratedrop.config as cfg
+    monkeypatch.setattr(cfg, "CONFIG_DIR", tmp_path / "cfg")
+    (tmp_path / "cfg" / "mysettings").mkdir(parents=True)
+    (tmp_path / "cfg" / "mysettings" / "DEVSETTING.DAT").write_bytes(b"DEVS")
+
+    staging, processed = tmp_path / "s", tmp_path / "p"
+    staging.mkdir()
+    shutil.copy2(CLICK, staging / "track.wav")
+    build_image(staging, processed)
+    assert (processed / "PIONEER" / "DEVSETTING.DAT").read_bytes() == b"DEVS"
+    from cratedrop.export.builder import load_manifest
+    assert "PIONEER/DEVSETTING.DAT" in load_manifest(processed)

@@ -30,6 +30,7 @@ from ..model import BeatGrid, TrackAnalysis
 from .layout import dedupe, usb_audio_path
 
 MANIFEST_REL = "PIONEER/.cratedrop.json"
+SETTINGS_FILES = ("DEVSETTING.DAT", "MYSETTING.DAT", "MYSETTING2.DAT", "DJMMYSETTING.DAT")
 INGEST_DATES_REL = ".cratedrop/ingest-dates.json"
 
 
@@ -295,6 +296,16 @@ def build_image(staging_dir: Path, processed_dir: Path,
         onelib_playlists.append((_playlist_name(date),
                                  [onelib_index[t] for t in by_date[date]]))
     written = write_onelibrary(pdb_dir, onelib_tracks, onelib_playlists)
+    # deck settings (DEVSETTING.DAT etc.) imported from a Rekordbox stick:
+    # the deck auto-loads these (waveform color mode, jog mode, ...)
+    from ..config import CONFIG_DIR
+    for name in SETTINGS_FILES:
+        src_setting = CONFIG_DIR / "mysettings" / name
+        if src_setting.exists():
+            shutil.copy2(src_setting, processed_dir / "PIONEER" / name)
+            data = (processed_dir / "PIONEER" / name).read_bytes()
+            manifest[f"PIONEER/{name}"] = {"size": len(data),
+                                          "sha1": hashlib.sha1(data).hexdigest()}
     for name in ["export.pdb", "exportExt.pdb"] + [p.name for p in written]:
         path = pdb_dir / name
         if path.exists():
