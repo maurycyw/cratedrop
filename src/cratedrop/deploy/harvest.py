@@ -139,19 +139,62 @@ def harvest(mount: Path, processed_dir: Path) -> HarvestReport:
             report.tracks_updated.append(analysis.meta.title)
         report.cues_found += len(cues)
 
-    # history playlists from the stick's pdb -> local archive
+    # history playlists -> local archive. Legacy decks write them into
+    # export.pdb; OneLibrary decks (XDJ-AZ...) write the history table of
+    # exportLibrary.db (observed live on an AZ).
+    sessions: dict[str, list] = {}
     pdb_path = mount / "PIONEER" / "rekordbox" / "export.pdb"
     if pdb_path.exists():
         db = Database.from_file(pdb_path)
-        if db.history_playlists:
-            tracks = {t.id: t.file_path for t in db.tracks}
-            names = {h.id: h.name for h in db.history_playlists}
-            sessions: dict[str, list] = {}
-            for entry in db.history_entries:
-                sessions.setdefault(names.get(entry.playlist_id, "?"), []).append(
-                    tracks.get(entry.track_id, f"track#{entry.track_id}"))
-            out = processed_dir / ".cratedrop" / "history"
-            out.mkdir(parents=True, exist_ok=True)
-            (out / "harvested.json").write_text(json.dumps(sessions, indent=1))
-            report.history_playlists = len(sessions)
+        tracks = {t.id: t.file_path for t in db.tracks}
+        names = {h.id: h.name for h in db.history_playlists}
+        for entry in db.history_entries:
+            sessions.setdefault("pdb:" + names.get(entry.playlist_id, "?"), []).append(
+                tracks.get(entry.track_id, f"track#{entry.track_id}"))
+    onelib_path = mount / "PIONEER" / "rekordbox" / "exportLibrary.db"
+    if onelib_path.exists():
+        sessions.update(_onelibrary_history(onelib_path))
+    if sessions:
+        out = processed_dir / ".cratedrop" / "history"
+        out.mkdir(parents=True, exist_ok=True)
+        existing = {}
+        if (out / "harvested.json").exists():
+            try:
+                existing = json.loads((out / "harvested.json").read_text())
+            except Exception:  # noqa: BLE001
+                existing = {}
+        existing.update(sessions)
+        (out / "harvested.json").write_text(json.dumps(existing, indent=1))
+        report.history_playlists = len(sessions)
     return report
+
+
+def _onelibrary_history(path: Path) -> dict[str, list]:
+    """history + history_content from an exportLibrary.db, keyed
+    'onelib:<name>' -> [audio paths]. Reads a scratch copy so SQLite never
+    touches the stick's file."""
+    import shutil
+    import tempfile
+
+    from ..formats.onelibrary import connect
+
+    sessions: dict[str, list] = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        scratch = Path(tmp) / "exportLibrary.db"
+        shutil.copy2(path, scratch)
+        for sib in ("-wal", "-shm"):
+            if path.with_name(path.name + sib).exists():
+                shutil.copy2(path.with_name(path.name + sib), scratch.with_name(scratch.name + sib))
+        try:
+            con = connect(scratch)
+            rows = con.execute(
+                "SELECT h.name, c.path FROM history_content hc "
+                "JOIN history h ON h.history_id = hc.history_id "
+                "JOIN content c ON c.content_id = hc.content_id "
+                "ORDER BY hc.history_id, hc.sequenceNo").fetchall()
+            con.close()
+        except Exception:  # noqa: BLE001 - unreadable/foreign db: no history
+            return {}
+    for name, track_path in rows:
+        sessions.setdefault("onelib:" + name, []).append(track_path)
+    return sessions

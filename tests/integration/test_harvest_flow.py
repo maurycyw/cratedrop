@@ -61,3 +61,27 @@ def test_history_harvest_from_real_library(tmp_path):
         (tmp_path / "processed" / ".cratedrop" / "history" / "harvested.json").read_text())
     assert len(sessions) == 36
     assert all(isinstance(v, list) for v in sessions.values())
+
+
+def test_onelibrary_history_harvest(tmp_path):
+    """Simulate an XDJ-AZ writing a play-history session into our OneLibrary."""
+    from cratedrop.formats.onelibrary import connect
+
+    staging, processed, mount = tmp_path / "s", tmp_path / "p", tmp_path / "stick"
+    staging.mkdir(), mount.mkdir()
+    shutil.copy2(FIXTURE_AUDIO, staging / "click_120bpm.wav")
+    build_image(staging, processed)
+    apply_sync(processed, mount, plan_sync(processed, mount))
+
+    db = mount / "PIONEER" / "rekordbox" / "exportLibrary.db"
+    con = connect(db)
+    con.execute("INSERT INTO history (history_id, sequenceNo, name, attribute, history_id_parent) "
+                "VALUES (1, 1, 'HISTORY 001', 0, 0)")
+    con.execute("INSERT INTO history_content (history_id, content_id, sequenceNo) VALUES (1, 1, 1)")
+    con.commit(); con.close()
+
+    report = harvest(mount, processed)
+    assert report.history_playlists == 1
+    sessions = json.loads((processed / ".cratedrop" / "history" / "harvested.json").read_text())
+    assert list(sessions) == ["onelib:HISTORY 001"]
+    assert sessions["onelib:HISTORY 001"][0].endswith("click_120bpm.wav")
