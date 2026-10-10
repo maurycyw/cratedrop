@@ -65,16 +65,17 @@ Every stick gets an all-tracks playlist, plus (all additive):
 
 ## What a track gets
 
-- **BPM + beatgrid** — [Beat This!](https://github.com/CPJKU/beat_this) beats/downbeats fitted to a constant grid, validated against Rekordbox's own analysis (±0.05 BPM, ±20 ms phase on steady tracks); low-confidence results (edits with grid jumps, acappellas) are flagged
+- **BPM + beatgrid** — [Beat This!](https://github.com/CPJKU/beat_this) beats/downbeats, fitted to a constant grid or a segmented one for multi-tempo edits; validated against Rekordbox's own analysis (±0.05 BPM, ±20 ms phase on steady tracks); low-confidence results are flagged
 - **Key** — essentia's EDM-tuned profiles → Camelot, `keyfinder-cli` fallback
 - **Hot cues A–D** — first kick, drop, breakdown, outro; snapped to downbeats, labeled and colored
 - **Waveforms** — all formats decks use (blue, RGB, 3-band), calibrated byte-level against real Rekordbox output
+- **Phrase analysis** — song-structure bars (intro/verse/chorus/outro) for CDJ-3000-era displays, derived from the cue heuristics
 - **Artwork** — embedded tag art, extracted and sized for decks; `cratedrop enrich` fills gaps from Deezer/iTunes
 - **Metadata** — tags → folder structure (`Artist/Album/track`) → `Artist - Title` filenames, in that priority
 
 ## The deck writes back — nothing is lost
 
-Decks write to the stick: hot cues, play history, settings. `flash` **harvests before it syncs**: deck-set cues merge into the library as protected user data (they survive re-analysis and every re-flash; automatic heuristics never displace them), play history archives locally (`cratedrop history`), and anything unrecognized is snapshotted raw before being touched.
+Decks write to the stick: hot cues, memory cues, loops, play history, settings. `flash` **harvests before it syncs**: deck-set cues and loops merge into the library as protected user data (they survive re-analysis and every re-flash; automatic heuristics never displace them), play history archives locally (`cratedrop history`), and anything unrecognized is snapshotted raw before being touched.
 
 ## CLI reference
 
@@ -87,6 +88,8 @@ Decks write to the stick: hot cues, play history, settings. `flash` **harvests b
 | `harvest --volume NAME` | import deck-written cues/history without flashing |
 | `enrich [--dry-run] [--min-score 0.72] [--force]` | fill missing art/metadata from the web (fills blanks only) |
 | `override FILE --bpm X --first-beat-ms X --key 8A` | pin manual values for a track (survives re-analysis) |
+| `verify [--volume NAME] [--deep]` | pre-gig check: everything present, parseable, consistent |
+| `dupes [--threshold 0.8]` | find near-duplicate recordings by audio fingerprint (needs `brew install chromaprint`) |
 | `settings import <stick-or-dir>` | ship deck preferences (waveform color mode etc.) from a Rekordbox-exported stick |
 | `history` | play sessions harvested from decks |
 | `status` | staging vs image: what's new |
@@ -98,8 +101,7 @@ Safety: `flash` is the only code that touches `/Volumes`, and it refuses anythin
 
 ## Current limitations
 
-- Constant-tempo beatgrids only (fine for electronic music; live-drummed material gets a flagged best fit)
-- Memory cues and loops are harvested/preserved but not yet re-written to the stick
+- Beatgrids are constant or piecewise-constant (segmented); continuously drifting tempo (live drummers) gets a flagged best fit
 - Developed and tested on macOS; the format writers are pure Python and portable, `flash`'s device safety checks are macOS-specific for now
 - Reverse-engineered formats: a Rekordbox/firmware update could change things. Test your stick before a gig. **Use at your own risk.**
 - The OneLibrary database encryption key is **not distributed with cratedrop**: it is resolved at first use from public community documentation (one-time network fetch, cached locally) or from the `CRATEDROP_ONELIBRARY_KEY` environment variable
