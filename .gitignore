@@ -10,3 +10,6 @@ build/
 tests/fixtures/golden-local/
 ._*
 .DS_Store
+tests/fixtures/golden/*/PIONEER/djprofile.nxs
+tests/fixtures/golden/*/PIONEER/extracted/
+tests/fixtures/golden/*/PIONEER/DeviceLibBackup/

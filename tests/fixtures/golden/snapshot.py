@@ -31,12 +31,16 @@ def main() -> None:
         raise SystemExit(f"{dest} already exists; delete it first if re-capturing")
     dest.mkdir(parents=True)
 
+    # never capture account/credential material rekordbox leaves on sticks
+    EXCLUDE = ("djprofile.nxs", "extracted", "DeviceLibBackup", "log", "TrashBox")
+
     manifest_lines = []
     for sub in ("PIONEER", "Contents"):
         src = volume / sub
         if not src.exists():
             continue
-        shutil.copytree(src, dest / sub)
+        shutil.copytree(src, dest / sub,
+                        ignore=shutil.ignore_patterns(*EXCLUDE))
         for f in sorted((dest / sub).rglob("*")):
             if f.is_file():
                 sha = hashlib.sha1(f.read_bytes()).hexdigest()
