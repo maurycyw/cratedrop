@@ -19,7 +19,14 @@ from pathlib import Path
 
 from ..model import TrackAnalysis
 
-KEY = "[ONELIBRARY-KEY-REDACTED]"
+import os
+
+# SQLCipher key for exportLibrary.db. Publicly documented by the community
+# (see 0xdevalias' writeup; also shipped by the rbox project) — overridable
+# in case it ever needs to come out of the source tree.
+KEY = os.environ.get(
+    "CRATEDROP_ONELIBRARY_KEY",
+    "[ONELIBRARY-KEY-REDACTED]")
 TEMPLATE = Path(str(files("cratedrop.formats.pdb") / "templates" / "empty-exportLibrary.db"))
 
 # same codes Rekordbox uses in the pdb (verified across the user's library)

@@ -5,6 +5,15 @@ description = "Headless CDJ USB builder: analyze audio and write Pioneer-native 
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Maurycy Wojtowicz" }]
+keywords = ["dj", "cdj", "xdj", "pioneer", "alphatheta", "rekordbox", "usb", "beatgrid", "onelibrary"]
+classifiers = [
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: MacOS",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Environment :: Console",
+]
 dependencies = [
     "typer>=0.12",
     "rich>=13",
@@ -43,3 +52,8 @@ allow-direct-references = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[project.urls]
+Homepage = "https://github.com/maurycyw/cratedrop"
+Repository = "https://github.com/maurycyw/cratedrop"
+Issues = "https://github.com/maurycyw/cratedrop/issues"

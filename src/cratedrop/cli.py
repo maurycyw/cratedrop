@@ -11,7 +11,17 @@ from rich.table import Table
 from .config import SETTING_KEYS, Config
 
 app = typer.Typer(no_args_is_help=True, add_completion=False,
-                  help="Headless CDJ USB builder (export.pdb + ANLZ, no Rekordbox).")
+                  help="Headless CDJ USB builder: your music library on a stick every Pioneer/AlphaTheta deck reads natively — no Rekordbox.")
+
+
+@app.callback(invoke_without_command=True)
+def _main(version: bool = typer.Option(False, "--version", is_eager=True,
+                                       help="print version and exit")) -> None:
+    if version:
+        from importlib.metadata import version as _v
+
+        console.print(f"cratedrop {_v('cratedrop')}")
+        raise typer.Exit()
 config_app = typer.Typer(no_args_is_help=True, help="Get/set staging and processed dirs.")
 app.add_typer(config_app, name="config")
 
@@ -40,6 +50,23 @@ def config_show() -> None:
     cfg = Config.load()
     console.print(f"staging-dir   = {cfg.staging_dir or '[dim]unset[/dim]'}")
     console.print(f"processed-dir = {cfg.processed_dir or '[dim]unset[/dim]'}")
+
+
+@app.command()
+def history(limit: int = typer.Option(20, "--limit")) -> None:
+    """Show play sessions harvested from decks (newest last)."""
+    import json as _json
+
+    cfg = Config.load()
+    path = cfg.require("processed-dir") / ".cratedrop" / "history" / "harvested.json"
+    if not path.exists():
+        console.print("no harvested history yet — play from a cratedrop stick, then flash/harvest")
+        raise typer.Exit()
+    sessions = _json.loads(path.read_text())
+    for name, tracks in list(sessions.items())[-limit:]:
+        console.print(f"[bold]{name}[/bold] ({len(tracks)} tracks)")
+        for t in tracks:
+            console.print(f"  {t.rsplit('/', 1)[-1]}")
 
 
 @app.command()
