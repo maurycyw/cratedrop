@@ -3,8 +3,8 @@ from pathlib import Path
 
 from pyrekordbox.rbxml import RekordboxXml
 
-from cratedrop.cache import load_any
 from cratedrop.audio.tags import sha1_file
+from cratedrop.cache import load_any
 from cratedrop.export.builder import build_image
 from cratedrop.import_rekordbox import import_xml
 from cratedrop.model import CueKind, CueSource
