@@ -90,6 +90,7 @@ class CuePoint:
     label: str = ""
     color_id: int = -1  # Pioneer palette id; -1 = writer picks default
     source: CueSource = CueSource.HEURISTIC
+    loop_out_ms: float | None = None  # set -> this cue is a loop (in=time_ms)
 
 
 @dataclass(frozen=True)
@@ -139,7 +140,8 @@ class TrackAnalysis:
             CuePoint(kind=CueKind(c["kind"]), time_ms=c["time_ms"],
                      slot=c.get("slot", ""), label=c.get("label", ""),
                      color_id=c.get("color_id", -1),
-                     source=CueSource(c.get("source", "heuristic")))
+                     source=CueSource(c.get("source", "heuristic")),
+                     loop_out_ms=c.get("loop_out_ms"))
             for c in raw.get("cues", [])
         )
         waveform = None

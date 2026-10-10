@@ -62,11 +62,13 @@ def extract_cues(raw: bytes) -> tuple[list[CuePoint], int]:
             if sub == b"PCPT" and len(entry) >= 40:
                 cue_type, time_ms = entry[28], struct.unpack(">I", entry[32:36])[0]
                 num = struct.unpack(">I", entry[12:16])[0]
+                loop_out = struct.unpack(">I", entry[36:40])[0]
                 color_id = entry[40] if len(entry) > 40 else 0
                 prefer = False
             elif sub == b"PCP2" and len(entry) >= 28:
                 cue_type, time_ms = entry[16], struct.unpack(">I", entry[20:24])[0]
                 num = struct.unpack(">I", entry[12:16])[0]
+                loop_out = struct.unpack(">I", entry[24:28])[0]
                 label_len = struct.unpack(">I", entry[40:44])[0] if len(entry) >= 44 else 0
                 label = (entry[44:44 + label_len].decode("utf-16-be", errors="replace")
                          .rstrip("\x00") if label_len else "")
@@ -74,9 +76,9 @@ def extract_cues(raw: bytes) -> tuple[list[CuePoint], int]:
                 prefer = True
             else:
                 continue
-            if cue_type == 2:
+            is_loop = cue_type == 2 and loop_out not in (0xFFFFFFFF, 0)
+            if is_loop:
                 loops += 1
-                continue
             kind = CueKind.HOT if num >= 1 else CueKind.MEMORY
             key = (kind, _slot_letter(num), time_ms)
             if prefer or key not in by_key:
@@ -84,7 +86,8 @@ def extract_cues(raw: bytes) -> tuple[list[CuePoint], int]:
                     kind=kind, slot=_slot_letter(num), time_ms=float(time_ms),
                     label=label if prefer else "",
                     color_id=color_id if color_id else -1,
-                    source=CueSource.DECK)
+                    source=CueSource.DECK,
+                    loop_out_ms=float(loop_out) if is_loop else None)
     return list(by_key.values()), loops
 
 

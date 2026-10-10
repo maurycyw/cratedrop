@@ -162,7 +162,8 @@ PIONEER_PCP2_MAP = {
 # The older flat-entry format makes Rekordbox reject the whole ANLZ file.
 
 
-def _pcpt_entry(hot_cue_num: int, time_ms: int, color_hex: str) -> bytes:
+def _pcpt_entry(hot_cue_num: int, time_ms: int, color_hex: str,
+                loop_out_ms: int | None = None) -> bytes:
     buf = bytearray(56)
     buf[0:4] = b"PCPT"
     buf[4:8] = _u32(28)   # len_header
@@ -172,10 +173,10 @@ def _pcpt_entry(hot_cue_num: int, time_ms: int, color_hex: str) -> bytes:
     buf[20:24] = _u32(0x00010000)   # constant in all native files
     buf[24:26] = _u16(0xFFFF)       # order_first
     buf[26:28] = _u16(0xFFFF)       # order_last
-    buf[28] = 1                      # type: 1=cue_point
+    buf[28] = 2 if loop_out_ms is not None else 1  # type: 1=cue, 2=loop
     buf[30:32] = _u16(0x03E8)       # constant
     buf[32:36] = _u32(time_ms)
-    buf[36:40] = _u32(0xFFFFFFFF)   # loop_time: none
+    buf[36:40] = _u32(loop_out_ms if loop_out_ms is not None else 0xFFFFFFFF)
     buf[40] = PIONEER_PALETTE.get(color_hex.lower(), 0) if color_hex else 0
     return bytes(buf)
 
@@ -185,19 +186,22 @@ def _empty_pcob(slot_type: int) -> bytes:
             + b"\xff\xff\xff\xff")
 
 
-def build_pcob_slot(slot_type: int, cues: list[tuple[int, int, str]]) -> bytes:
-    """slot_type: 1=hot cues, 0=memory cues. cues: (hot_cue_num, time_ms, color_hex)."""
+def build_pcob_slot(slot_type: int,
+                    cues: list[tuple[int, int, str, int | None]]) -> bytes:
+    """slot_type: 1=hot cues, 0=memory cues.
+    cues: (hot_cue_num, time_ms, color_hex, loop_out_ms_or_None)."""
     if not cues:
         return _empty_pcob(slot_type)
     header = (b"PCOB" + _u32(24) + _u32(24 + len(cues) * 56) + _u32(slot_type)
               + _u16(0) + _u16(len(cues)) + b"\xff\xff\xff\xff")
-    return header + b"".join(_pcpt_entry(n, t, c) for n, t, c in cues)
+    return header + b"".join(_pcpt_entry(n, t, c, lo) for n, t, c, lo in cues)
 
 
 # ── PCO2 (EXT extended cue list with labels/colors) ──────────────────────────
 
 
-def _pcp2_entry(hot_cue_num: int, time_ms: int, label: str, color_hex: str) -> bytes:
+def _pcp2_entry(hot_cue_num: int, time_ms: int, label: str, color_hex: str,
+                loop_out_ms: int | None = None) -> bytes:
     label_bytes = _utf16be_z(label) if label else b""
     label_len = len(label_bytes)
     # Native Rekordbox writes body >= 88 whenever a label is present
@@ -208,10 +212,10 @@ def _pcp2_entry(hot_cue_num: int, time_ms: int, label: str, color_hex: str) -> b
     buf[4:8] = _u32(16)
     buf[8:12] = _u32(len_tag)
     buf[12:16] = _u32(hot_cue_num)
-    buf[16] = 1                      # type: 1=cue_point
+    buf[16] = 2 if loop_out_ms is not None else 1  # type: 1=cue, 2=loop
     buf[18:20] = _u16(0x03E8)       # constant
     buf[20:24] = _u32(time_ms)
-    buf[24:28] = _u32(0xFFFFFFFF)   # loop_time: none
+    buf[24:28] = _u32(loop_out_ms if loop_out_ms is not None else 0xFFFFFFFF)
     buf[29] = 0x01                   # constant
     buf[40:44] = _u32(label_len)    # len_comment incl null terminator
     buf[44:44 + label_len] = label_bytes
@@ -226,11 +230,11 @@ def _empty_pco2(slot_type: int) -> bytes:
 
 
 def build_pco2_slot(slot_type: int,
-                    cues: list[tuple[int, int, str, str]]) -> bytes:
-    """cues: (hot_cue_num, time_ms, label, color_hex)."""
+                    cues: list[tuple[int, int, str, str, int | None]]) -> bytes:
+    """cues: (hot_cue_num, time_ms, label, color_hex, loop_out_ms_or_None)."""
     if not cues:
         return _empty_pco2(slot_type)
-    entries = b"".join(_pcp2_entry(n, t, lbl, c) for n, t, lbl, c in cues)
+    entries = b"".join(_pcp2_entry(n, t, lbl, c, lo) for n, t, lbl, c, lo in cues)
     header = (b"PCO2" + _u32(20) + _u32(20 + len(entries)) + _u32(slot_type)
               + _u16(len(cues)) + _u16(0))
     return header + entries

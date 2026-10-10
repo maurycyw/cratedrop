@@ -23,10 +23,10 @@ DEFAULT_SLOT_COLORS = ["#00ff00", "#ff0000", "#ffff00", "#0080ff",
 
 _CODE_TO_HEX = {code: hex_ for hex_, code in PIONEER_PALETTE.items()}
 
-# Memory-cue writing is disabled pending our own hardware verification: the
-# DjManager reference verified the byte layout but found deck behavior
-# unreliable and ships with it off. Revisit at M3.5 with golden deck diffs.
-WRITE_MEMORY_CUES = False
+# Memory cues and loops are written so deck-harvested user data round-trips.
+# (Rekordbox 7 itself no longer writes memory cues into legacy ANLZ, but
+# legacy players read them from here; byte layout hex-verified by the
+# DjManager reference. Hardware gate: XZ/AZ round-trip test.)
 
 
 def _slot_num(cue: CuePoint) -> int:
@@ -46,6 +46,15 @@ def _color_hex(cue: CuePoint) -> str:
 def _hot_cues(analysis: TrackAnalysis) -> list[CuePoint]:
     return sorted((c for c in analysis.cues if c.kind == CueKind.HOT and c.slot),
                   key=_slot_num)
+
+
+def _memory_cues(analysis: TrackAnalysis) -> list[CuePoint]:
+    return sorted((c for c in analysis.cues if c.kind == CueKind.MEMORY),
+                  key=lambda c: c.time_ms)
+
+
+def _loop_out(c: CuePoint) -> int | None:
+    return round(c.loop_out_ms) if c.loop_out_ms is not None else None
 
 
 def _beats(analysis: TrackAnalysis) -> list[tuple[int, float]]:
@@ -71,8 +80,10 @@ def _beat_amplitudes(analysis: TrackAnalysis) -> list[int] | None:
 
 def build_dat(analysis: TrackAnalysis, usb_file_path: str) -> bytes:
     bpm = analysis.grid.bpm if analysis.grid else 0.0
-    hot = [(n, round(c.time_ms), _color_hex(c))
+    hot = [(n, round(c.time_ms), _color_hex(c), _loop_out(c))
            for c in _hot_cues(analysis) if 1 <= (n := _slot_num(c)) <= 3]
+    memory = [(0, round(c.time_ms), "", _loop_out(c))
+              for c in _memory_cues(analysis)]
     body = [
         sections.build_ppth(usb_file_path),
         sections.build_pvbr(),
@@ -82,24 +93,26 @@ def build_dat(analysis: TrackAnalysis, usb_file_path: str) -> bytes:
         body.append(sections.build_pwav(quantize.pwav_bytes(analysis.waveform)))
         body.append(sections.build_pwv2(quantize.pwv2_bytes(analysis.waveform)))
     body.append(sections.build_pcob_slot(1, hot))
-    body.append(sections.build_pcob_slot(0, []))
+    body.append(sections.build_pcob_slot(0, memory))
     payload = b"".join(body)
     return sections.build_file_header(28 + len(payload)) + payload
 
 
 def build_ext(analysis: TrackAnalysis, usb_file_path: str) -> bytes:
     bpm = analysis.grid.bpm if analysis.grid else 0.0
-    ext_hot = [(n, round(c.time_ms), _color_hex(c))
+    ext_hot = [(n, round(c.time_ms), _color_hex(c), _loop_out(c))
                for c in _hot_cues(analysis) if (n := _slot_num(c)) >= 4]
-    all_hot = [(n, round(c.time_ms), c.label, _color_hex(c))
+    all_hot = [(n, round(c.time_ms), c.label, _color_hex(c), _loop_out(c))
                for c in _hot_cues(analysis) if (n := _slot_num(c)) >= 1]
+    memory2 = [(0, round(c.time_ms), c.label, "", _loop_out(c))
+               for c in _memory_cues(analysis)]
     body = [sections.build_ppth(usb_file_path)]
     if analysis.waveform:
         body.append(sections.build_pwv3(quantize.pwv3_bytes(analysis.waveform)))
     body.append(sections.build_pcob_slot(1, ext_hot))
     body.append(sections.build_pcob_slot(0, []))
     body.append(sections.build_pco2_slot(1, all_hot))
-    body.append(sections.build_pco2_slot(0, []))
+    body.append(sections.build_pco2_slot(0, memory2))
     body.append(sections.build_pqt2(_beats(analysis), bpm,
                                     values=_beat_amplitudes(analysis)))
     if analysis.waveform:
