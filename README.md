@@ -82,6 +82,17 @@ Every stick gets an all-tracks playlist, plus (all additive):
 - **Artwork** — embedded tag art, extracted and sized for decks; `cratedrop enrich` fills gaps from Deezer/iTunes
 - **Metadata** — tags → folder structure (`Artist/Album/track`) → `Artist - Title` filenames, in that priority
 
+## Switching from Rekordbox? Bring everything
+
+Export your collection once (Rekordbox: File → Export Collection in xml format), then:
+
+```sh
+cratedrop import-rekordbox ~/Documents/rekordbox.xml   # --with-grids to keep your beatgrids too
+cratedrop process
+```
+
+Your hot cues, memory cues, loops and playlists come across as protected user data — they survive re-analysis and every re-flash. Tracks are matched by path, falling back to filename, so an XML exported on another machine still resolves.
+
 ## The deck writes back — nothing is lost
 
 Decks write to the stick: hot cues, memory cues, loops, play history, settings. `flash` **harvests before it syncs**: deck-set cues and loops merge into the library as protected user data (they survive re-analysis and every re-flash; automatic heuristics never displace them), play history archives locally (`cratedrop history`), and anything unrecognized is snapshotted raw before being touched.
@@ -95,6 +106,7 @@ Decks write to the stick: hot cues, memory cues, loops, play history, settings. 
 | `watch [--interval 10] [--settle 15]` | daemon: auto-process drops |
 | `flash --volume NAME [--dry-run] [--prune] [--eject] [--no-harvest]` | harvest deck data, then incremental sync |
 | `harvest --volume NAME` | import deck-written cues/history without flashing |
+| `import-rekordbox XML [--with-grids]` | one-time migration: cues, loops, grids, playlists from a Rekordbox export |
 | `enrich [--dry-run] [--min-score 0.72] [--force]` | fill missing art/metadata from the web (fills blanks only) |
 | `override FILE --bpm X --first-beat-ms X --key 8A` | pin manual values for a track (survives re-analysis) |
 | `verify [--volume NAME] [--deep]` | pre-gig check: everything present, parseable, consistent |

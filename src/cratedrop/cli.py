@@ -52,6 +52,34 @@ def config_show() -> None:
     console.print(f"processed-dir = {cfg.processed_dir or '[dim]unset[/dim]'}")
 
 
+@app.command("import-rekordbox")
+def import_rekordbox(xml: Path = typer.Argument(help="rekordbox.xml collection export"),
+                     with_grids: bool = typer.Option(False, "--with-grids",
+                                                     help="also pin Rekordbox's beatgrids as overrides")) -> None:
+    """Import cues, loops, grids and playlists from a Rekordbox XML export."""
+    from .import_rekordbox import import_xml
+
+    cfg = Config.load()
+    staging = cfg.require("staging-dir")
+    processed = cfg.require("processed-dir")
+    with console.status("importing…") as status:
+        report = import_xml(xml.expanduser(), staging, processed,
+                            with_grids=with_grids,
+                            on_progress=lambda m: status.update(m))
+    console.print(f"matched [bold]{report.matched}[/bold] tracks "
+                  f"({len(report.unmatched)} in the XML not found in staging)")
+    console.print(f"imported {report.cues} cue(s) incl. {report.loops} loop(s)"
+                  + (f", {report.grids} beatgrid override(s)" if with_grids else ""))
+    if report.multi_tempo_skipped:
+        console.print(f"[dim]{report.multi_tempo_skipped} multi-tempo grid(s) skipped — "
+                      "cratedrop's segmented analysis handles those[/dim]")
+    if report.playlists:
+        console.print(f"playlists -> staging/'{'rekordbox playlists'}': "
+                      + ", ".join(report.playlists[:10])
+                      + (" …" if len(report.playlists) > 10 else ""))
+    console.print("run [bold]cratedrop process[/bold] to apply")
+
+
 @app.command()
 def dupes(threshold: float = typer.Option(0.80, "--threshold", help="similarity 0..1")) -> None:
     """Find near-duplicate recordings (same audio, different file/encoding)."""
