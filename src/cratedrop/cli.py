@@ -53,6 +53,35 @@ def config_show() -> None:
 
 
 @app.command()
+def verify(volume: str = typer.Option(None, "--volume", help="verify a flashed stick instead of the image"),
+           deep: bool = typer.Option(False, "--deep", help="hash-verify audio files too (slow)")) -> None:
+    """Pre-gig check: everything on the image/stick is complete and parseable."""
+    from .deploy import usb
+    from .verify.integrity import verify_tree
+
+    cfg = Config.load()
+    if volume:
+        try:
+            root = usb.check_target(volume)
+        except usb.FlashRefused as exc:
+            console.print(f"[red]refused:[/red] {exc}")
+            raise typer.Exit(1)
+    else:
+        root = cfg.require("processed-dir")
+    with console.status("verifying…") as status:
+        problems = verify_tree(root, deep=deep,
+                               on_progress=lambda m: status.update(f"verifying: {m}"))
+    if problems:
+        for p in problems[:40]:
+            console.print(f"[red]✗[/red] {p}")
+        if len(problems) > 40:
+            console.print(f"… +{len(problems) - 40} more")
+        console.print(f"[red]{len(problems)} problem(s)[/red]")
+        raise typer.Exit(1)
+    console.print(f"[green]✓ {root} verified: all files present, parseable, and consistent[/green]")
+
+
+@app.command()
 def history(limit: int = typer.Option(20, "--limit")) -> None:
     """Show play sessions harvested from decks (newest last)."""
     import json as _json
