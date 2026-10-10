@@ -26,13 +26,22 @@ Every stick carries both formats. To our knowledge this is the first open-source
 
 ## Install
 
-macOS (Apple Silicon or Intel), Python managed by [uv](https://docs.astral.sh/uv/):
+macOS (Apple Silicon or Intel):
 
 ```sh
 brew install ffmpeg
+uv tool install "cratedrop[dsp]"   # or: pipx install "cratedrop[dsp]"
+cratedrop doctor                   # verify the environment
+```
+
+(the `dsp` extra is beat/key detection — torch + essentia; omit it on machines
+that only build/flash images from precomputed analysis)
+
+From source, for development:
+
+```sh
 git clone https://github.com/maurycyw/cratedrop && cd cratedrop
-uv sync --extra dsp        # dsp extra = beat/key detection (torch, essentia)
-uv run cratedrop doctor    # verify the environment
+uv sync --extra dsp && uv run pytest
 ```
 
 ## Quickstart

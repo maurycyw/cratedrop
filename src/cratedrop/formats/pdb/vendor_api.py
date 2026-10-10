@@ -1,11 +1,11 @@
 """Single choke-point for the fragmede/rekordbox-pdb dependency.
 
-Everything in cratedrop imports pdb primitives from here, never from
-`rekordbox_pdb` directly — if upstream churns or we need to vendor a patched
-copy, this is the only file that changes.
+Everything in cratedrop imports pdb primitives from here. The library is
+vendored (see _vendor/rekordbox_pdb/VENDORED.md) because PyPI forbids git
+dependencies; this file is the only place that knows.
 """
 
-from rekordbox_pdb import (  # noqa: F401
+from cratedrop._vendor.rekordbox_pdb import (  # noqa: F401
     Album,
     Artist,
     Artwork,
@@ -24,4 +24,4 @@ from rekordbox_pdb import (  # noqa: F401
     Track,
     decode_string,
 )
-from rekordbox_pdb.edit import PdbEditor  # noqa: F401
+from cratedrop._vendor.rekordbox_pdb.edit import PdbEditor  # noqa: F401

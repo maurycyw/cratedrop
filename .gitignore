@@ -13,3 +13,4 @@ tests/fixtures/golden-local/
 tests/fixtures/golden/*/PIONEER/djprofile.nxs
 tests/fixtures/golden/*/PIONEER/extracted/
 tests/fixtures/golden/*/PIONEER/DeviceLibBackup/
+dist/
