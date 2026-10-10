@@ -299,3 +299,40 @@ def build_pwvc() -> bytes:
     # Calibration constants 100/104/197 observed in all native .2EX files;
     # len_header=14 is unusual but confirmed.
     return b"PWVC" + _u32(14) + _u32(20) + b"\x00\x00" + _u16(100) + _u16(104) + _u16(197)
+
+
+# ── PSSI: song structure / phrase analysis (Rekordbox 6+, CDJ-3000 era) ──────
+# Exported files carry the body XOR-masked; the mask is XOR_MASK[i % 19] +
+# len_entries per byte, starting after the len_entries field (offset 18).
+
+_PSSI_XOR = bytes.fromhex("CBE1EEFAE5EEADEEE9D2E9EBE1E9F3E8E9F4E1")
+
+# phrase kinds for mood=2 ("mid"): 1=Intro, 2=Verse, 8=Bridge, 9=Chorus, 10=Outro
+PHRASE_INTRO, PHRASE_VERSE, PHRASE_BRIDGE, PHRASE_CHORUS, PHRASE_OUTRO = 1, 2, 8, 9, 10
+
+
+def build_pssi(entries: list[tuple[int, int]], end_beat: int,
+               mood: int = 2, garble: bool = True) -> bytes:
+    """entries: (beat_number 1-based, phrase kind), ascending. Matches the
+    golden Rekordbox 7 layout: len_header=32, 24-byte entries (index, beat,
+    kind, rest zero)."""
+    body = bytearray()
+    body += _u32(24)                 # len_entry_bytes
+    body += _u16(len(entries))
+    body += _u16(mood)
+    body += bytes(6)                 # u1
+    body += _u16(end_beat)
+    body += b"\x00\x01"              # u2 constant (golden)
+    body += bytes(2)                 # bank + u3
+    for index, (beat, kind) in enumerate(entries, start=1):
+        e = bytearray(24)
+        e[0:2] = _u16(index)
+        e[2:4] = _u16(beat)
+        e[4:6] = _u16(kind)
+        body += e
+    tag = bytearray(b"PSSI" + _u32(32) + _u32(12 + len(body)) + bytes(body))
+    if garble:
+        shift = len(entries)
+        for i in range(18, len(tag)):
+            tag[i] ^= (_PSSI_XOR[(i - 18) % 19] + shift) & 0xFF
+    return bytes(tag)

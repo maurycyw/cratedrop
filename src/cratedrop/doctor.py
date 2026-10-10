@@ -76,6 +76,7 @@ def run_checks() -> list[Check]:
 
     # optional external validators / fallbacks
     checks.append(_binary_check("keyfinder-cli (key fallback)", "keyfinder-cli", required=False))
+    checks.append(_binary_check("fpcalc (duplicate detection)", "fpcalc", required=False))
     checks.append(_binary_check("rekordcrate (validator)", "rekordcrate", required=False))
     checks.append(_binary_check("java (crate-digger validator)", "java", required=False))
 

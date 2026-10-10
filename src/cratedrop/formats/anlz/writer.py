@@ -98,6 +98,32 @@ def build_dat(analysis: TrackAnalysis, usb_file_path: str) -> bytes:
     return sections.build_file_header(28 + len(payload)) + payload
 
 
+def _phrases(analysis: TrackAnalysis) -> list[tuple[int, int]] | None:
+    """Phrase boundaries (beat_no, kind) from the cue heuristics: intro from
+    the top, verse at the first kick, chorus at the drop, bridge at the
+    breakdown, outro at the outro cue."""
+    if analysis.grid is None or len(analysis.grid.beats) < 8:
+        return None
+    times = [b.time_ms for b in analysis.grid.beats]
+
+    def beat_no(t_ms: float) -> int:
+        import bisect
+
+        return min(len(times), max(1, bisect.bisect_left(times, t_ms) + 1))
+
+    kind_by_slot = {"A": sections.PHRASE_VERSE, "B": sections.PHRASE_CHORUS,
+                    "C": sections.PHRASE_BRIDGE, "D": sections.PHRASE_OUTRO}
+    entries = [(1, sections.PHRASE_INTRO)]
+    for c in _hot_cues(analysis):
+        kind = kind_by_slot.get(c.slot)
+        if kind is None:
+            continue
+        bn = beat_no(c.time_ms)
+        if bn > entries[-1][0]:
+            entries.append((bn, kind))
+    return entries if len(entries) >= 2 else None
+
+
 def build_ext(analysis: TrackAnalysis, usb_file_path: str) -> bytes:
     bpm = analysis.grid.bpm if analysis.grid else 0.0
     ext_hot = [(n, round(c.time_ms), _color_hex(c), _loop_out(c))
@@ -118,6 +144,9 @@ def build_ext(analysis: TrackAnalysis, usb_file_path: str) -> bytes:
     if analysis.waveform:
         body.append(sections.build_pwv5(quantize.pwv5_bytes(analysis.waveform)))
         body.append(sections.build_pwv4(quantize.pwv4_bytes(analysis.waveform)))
+    phrases = _phrases(analysis)
+    if phrases:
+        body.append(sections.build_pssi(phrases, end_beat=len(analysis.grid.beats)))
     payload = b"".join(body)
     return sections.build_file_header(28 + len(payload)) + payload
 

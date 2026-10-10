@@ -63,7 +63,7 @@ def test_ext_round_trip(analysis):
     data = writer.build_ext(analysis, USB_PATH)
     parsed = AnlzFile.parse(data)
     assert parsed.tag_types == ["PPTH", "PWV3", "PCOB", "PCOB", "PCO2", "PCO2",
-                                "PQT2", "PWV5", "PWV4"]
+                                "PQT2", "PWV5", "PWV4", "PSSI"]
     assert parsed.file_header.len_file == len(data)
 
 
@@ -122,3 +122,16 @@ def test_write_anlz_files(analysis, tmp_path):
     for path in written.values():
         assert path.exists()
         AnlzFile.parse_file(path)  # must parse from disk too
+
+
+def test_pssi_phrases_round_trip(analysis):
+    data = writer.build_ext(analysis, USB_PATH)
+    parsed = AnlzFile.parse(data)
+    assert parsed.tag_types[-1] == "PSSI"
+    pssi = parsed.get_tag("PSSI").struct.content
+    assert pssi.mood == 2
+    assert pssi.end_beat == len(analysis.grid.beats)
+    kinds = [(e.beat, e.kind) for e in pssi.entries]
+    assert kinds[0] == (1, 1)                      # intro at beat 1
+    assert any(k == 9 for _, k in kinds)           # chorus at the drop (B)
+    assert all(kinds[i][0] < kinds[i + 1][0] for i in range(len(kinds) - 1))

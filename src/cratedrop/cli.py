@@ -53,6 +53,42 @@ def config_show() -> None:
 
 
 @app.command()
+def dupes(threshold: float = typer.Option(0.80, "--threshold", help="similarity 0..1")) -> None:
+    """Find near-duplicate recordings (same audio, different file/encoding)."""
+    from .analysis import fingerprint as fp
+    from .audio.tags import sha1_file
+    from .export.builder import scan_staging
+
+    if not fp.available():
+        console.print("[red]fpcalc not found[/red] — install chromaprint: brew install chromaprint")
+        raise typer.Exit(1)
+    cfg = Config.load()
+    staging = cfg.require("staging-dir")
+    processed = cfg.require("processed-dir")
+    files = scan_staging(staging)
+    with console.status("fingerprinting…") as status:
+        entries = []
+        for i, p in enumerate(files):
+            status.update(f"fingerprinting {i + 1}/{len(files)}: {p.name[:40]}")
+            entries.append((p, sha1_file(p)))
+        groups = fp.find_duplicates(entries, processed, threshold=threshold,
+                                    on_progress=lambda i, n: status.update(
+                                        f"comparing {i + 1}/{n}"))
+    if not groups:
+        console.print(f"[green]no near-duplicates found[/green] ({len(files)} tracks)")
+        return
+    quality_rank = {".flac": 0, ".aiff": 1, ".aif": 1, ".wav": 2, ".m4a": 3, ".mp3": 4}
+    for group in groups:
+        ranked = sorted(group, key=lambda g: (quality_rank.get(g[0].suffix.lower(), 9),
+                                              -g[0].stat().st_size))
+        console.print(f"\n[bold]duplicate group[/bold] ({len(group)} files):")
+        for n, (path, score) in enumerate(ranked):
+            tag = "[green]keep (best quality)[/green]" if n == 0 else f"[yellow]dupe {score:.2f}[/yellow]"
+            console.print(f"  {tag} {path.relative_to(staging)}")
+    console.print(f"\n{len(groups)} group(s). Nothing was deleted — review and remove manually.")
+
+
+@app.command()
 def verify(volume: str = typer.Option(None, "--volume", help="verify a flashed stick instead of the image"),
            deep: bool = typer.Option(False, "--deep", help="hash-verify audio files too (slow)")) -> None:
     """Pre-gig check: everything on the image/stick is complete and parseable."""
