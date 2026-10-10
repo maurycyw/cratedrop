@@ -1,6 +1,6 @@
 [project]
 name = "cratedrop"
-version = "0.1.0"
+version = "0.1.1"
 description = "Headless CDJ USB builder: analyze audio and write Pioneer-native USB sticks (export.pdb + ANLZ) without Rekordbox"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
