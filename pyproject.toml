@@ -60,3 +60,11 @@ testpaths = ["tests"]
 Homepage = "https://github.com/maurycyw/cratedrop"
 Repository = "https://github.com/maurycyw/cratedrop"
 Issues = "https://github.com/maurycyw/cratedrop/issues"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# errors, pyflakes, import order — deliberately not the pedantic sets
+select = ["E4", "E7", "E9", "F", "I"]

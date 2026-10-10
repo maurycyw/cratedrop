@@ -1,5 +1,4 @@
 from cratedrop.model import (
-    Beat,
     BeatGrid,
     CueKind,
     CuePoint,

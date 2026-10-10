@@ -28,8 +28,8 @@ MIN_SCORE_DEFAULT = 0.72
 _JUNK = [
     re.compile(r"^\d{6,}_"),                    # beatport ids: 17399869_
     re.compile(r"\[[^\]]*\]"),                  # [TubeRipper.com], [wav 24]
-    re.compile(r"\((?:official|lyric|audio|hd|hq)[^)]*\)", re.I),
-    re.compile(r"\b(?:original mix|extended mix|radio edit)\b", re.I),
+    re.compile(r"\((?:official|lyric|audio|hd|hq)[^)]*\)", re.IGNORECASE),
+    re.compile(r"\b(?:original mix|extended mix|radio edit)\b", re.IGNORECASE),
     re.compile(r"[_]+"),
     re.compile(r"\(\s*\)"),  # parens left empty by the strips above
 ]

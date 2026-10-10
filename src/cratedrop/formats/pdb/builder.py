@@ -32,7 +32,7 @@ class PdbBuilder:
         self._editor = editor
 
     @classmethod
-    def from_template(cls, template_path: Path) -> "PdbBuilder":
+    def from_template(cls, template_path: Path) -> PdbBuilder:
         return cls(PdbEditor.from_file(template_path))
 
     def get_or_create_artwork(self, artwork_path: str) -> int:
@@ -47,8 +47,8 @@ class PdbBuilder:
             if row.path == artwork_path:
                 return row.id
         new_id = max((r.id for r in rows), default=0) + 1
-        row_bytes, alloc, shift_at = ed._build_named_row(new_id, artwork_path)  # noqa: SLF001
-        ed._append_row(TableType.ARTWORK, row_bytes, alloc, index_shift_at=shift_at)  # noqa: SLF001
+        row_bytes, alloc, shift_at = ed._build_named_row(new_id, artwork_path)
+        ed._append_row(TableType.ARTWORK, row_bytes, alloc, index_shift_at=shift_at)
         return new_id
 
     def add_track(self, analysis: TrackAnalysis, usb_audio_path: str,

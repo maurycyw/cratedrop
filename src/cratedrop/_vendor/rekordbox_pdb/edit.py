@@ -99,7 +99,7 @@ class PdbEditor:
     # -- construction / output ---------------------------------------------
 
     @classmethod
-    def from_file(cls, path: str | Path) -> "PdbEditor":
+    def from_file(cls, path: str | Path) -> PdbEditor:
         return cls(Path(path).read_bytes())
 
     def to_bytes(self) -> bytes:

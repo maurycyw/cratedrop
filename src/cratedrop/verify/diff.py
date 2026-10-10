@@ -13,8 +13,8 @@ from pathlib import Path
 
 from rich.console import Console
 
-from ..formats.anlz.reader import is_anlz_path, parse_anlz
-from ..formats.pdb.vendor_api import Database, ExtDatabase, TableType
+from ..formats.anlz.reader import is_anlz_path
+from ..formats.pdb.vendor_api import Database, TableType
 
 # Byte ranges that legitimately differ between semantically equal files.
 # File header (page 0): 0x14 u32 save-sequence number.
@@ -83,7 +83,7 @@ def _table_name(table_type: int) -> str:
 
 def _page_owner_map(db: Database) -> dict[int, str]:
     """page index -> owning table name, by walking each table's page chain."""
-    raw = db._data  # noqa: SLF001 - diff tool is intentionally intimate
+    raw = db._data
     owners: dict[int, str] = {0: "file_header"}
     for table in db.tables:
         name = _table_name(table.type)
@@ -141,7 +141,7 @@ def diff_pdb(console: Console, ours_path: Path, golden_path: Path,
         changed |= bool(added or removed)
 
     # 2. byte tier: page-by-page with masks
-    a_raw, b_raw = ours._data, golden._data  # noqa: SLF001
+    a_raw, b_raw = ours._data, golden._data
     page_size = ours.page_size
     owners = _page_owner_map(golden if len(golden._data) >= len(ours._data) else ours)
     if len(a_raw) != len(b_raw):

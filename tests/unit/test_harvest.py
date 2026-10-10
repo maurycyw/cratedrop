@@ -1,8 +1,5 @@
 from pathlib import Path
 
-import numpy as np
-import pytest
-
 from cratedrop.deploy.harvest import extract_cues, extract_ppth
 from cratedrop.formats.anlz import writer
 from cratedrop.model import (
@@ -13,7 +10,6 @@ from cratedrop.model import (
     TrackAnalysis,
     TrackMeta,
 )
-from cratedrop.deploy.harvest import extract_cues
 
 GOLDEN_CLICK_EXT = (Path(__file__).parent.parent / "fixtures" / "golden" / "click"
                     / "PIONEER" / "USBANLZ" / "P026" / "0000B17C" / "ANLZ0000.EXT")

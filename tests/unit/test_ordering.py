@@ -19,8 +19,9 @@ def test_scan_staging_newest_first(tmp_path):
 
 
 def test_flash_copy_order_audio_first_pdb_last(tmp_path):
-    from cratedrop.deploy.usb import plan_sync
     import json
+
+    from cratedrop.deploy.usb import plan_sync
 
     processed = tmp_path / "processed"
     now = time.time()

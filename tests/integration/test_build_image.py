@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from pyrekordbox.anlz import AnlzFile
 
-from cratedrop.deploy.usb import SyncPlan, apply_sync, plan_sync
+from cratedrop.deploy.usb import apply_sync, plan_sync
 from cratedrop.export.builder import build_image, load_manifest
 from cratedrop.formats.pdb.vendor_api import Database
 

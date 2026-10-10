@@ -21,10 +21,10 @@ Layout (verified byte-by-byte against real exports; see FORMAT.md):
 from __future__ import annotations
 
 import struct
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
-from typing import Callable
 
 __all__ = [
     "Album",
@@ -225,7 +225,7 @@ class Track:
         return self._s(20)
 
     @classmethod
-    def parse(cls, page: bytes, row: int) -> "Track":
+    def parse(cls, page: bytes, row: int) -> Track:
         f = _TRACK_FIXED.unpack_from(page, row)
         (
             _, index_shift, bitmask, sample_rate, composer_id, file_size,
@@ -257,7 +257,7 @@ class Genre:
     name: str
 
     @classmethod
-    def parse(cls, page: bytes, row: int) -> "Genre":
+    def parse(cls, page: bytes, row: int) -> Genre:
         return cls(id=_u32(page, row), name=decode_string(page, row + 4))
 
 
@@ -267,7 +267,7 @@ class Label:
     name: str
 
     @classmethod
-    def parse(cls, page: bytes, row: int) -> "Label":  # same layout as Genre
+    def parse(cls, page: bytes, row: int) -> Label:  # same layout as Genre
         return cls(id=_u32(page, row), name=decode_string(page, row + 4))
 
 
@@ -278,7 +278,7 @@ class Artist:
     index_shift: int
 
     @classmethod
-    def parse(cls, page: bytes, row: int) -> "Artist":
+    def parse(cls, page: bytes, row: int) -> Artist:
         subtype = _u16(page, row)
         index_shift = _u16(page, row + 2)
         artist_id = _u32(page, row + 4)
@@ -298,7 +298,7 @@ class Album:
     index_shift: int
 
     @classmethod
-    def parse(cls, page: bytes, row: int) -> "Album":
+    def parse(cls, page: bytes, row: int) -> Album:
         index_shift = _u16(page, row + 2)
         artist_id = _u32(page, row + 8)
         album_id = _u32(page, row + 12)
@@ -313,7 +313,7 @@ class Key:
     name: str
 
     @classmethod
-    def parse(cls, page: bytes, row: int) -> "Key":
+    def parse(cls, page: bytes, row: int) -> Key:
         return cls(id=_u32(page, row), name=decode_string(page, row + 8))
 
 
@@ -323,7 +323,7 @@ class Color:
     name: str
 
     @classmethod
-    def parse(cls, page: bytes, row: int) -> "Color":
+    def parse(cls, page: bytes, row: int) -> Color:
         return cls(id=_u16(page, row + 5), name=decode_string(page, row + 8))
 
 
@@ -336,7 +336,7 @@ class PlaylistTreeNode:
     is_folder: bool
 
     @classmethod
-    def parse(cls, page: bytes, row: int) -> "PlaylistTreeNode":
+    def parse(cls, page: bytes, row: int) -> PlaylistTreeNode:
         return cls(
             parent_id=_u32(page, row),
             sort_order=_u32(page, row + 8),
@@ -353,7 +353,7 @@ class PlaylistEntry:
     playlist_id: int
 
     @classmethod
-    def parse(cls, page: bytes, row: int) -> "PlaylistEntry":
+    def parse(cls, page: bytes, row: int) -> PlaylistEntry:
         return cls(
             entry_index=_u32(page, row),
             track_id=_u32(page, row + 4),
@@ -367,7 +367,7 @@ class Artwork:
     path: str
 
     @classmethod
-    def parse(cls, page: bytes, row: int) -> "Artwork":
+    def parse(cls, page: bytes, row: int) -> Artwork:
         return cls(id=_u32(page, row), path=decode_string(page, row + 4))
 
 
@@ -377,7 +377,7 @@ class Column:
     name: str  # wrapped in U+FFFA / U+FFFB by rekordbox
 
     @classmethod
-    def parse(cls, page: bytes, row: int) -> "Column":
+    def parse(cls, page: bytes, row: int) -> Column:
         return cls(id=_u16(page, row), name=decode_string(page, row + 4))
 
 
@@ -387,7 +387,7 @@ class HistoryPlaylist:
     name: str
 
     @classmethod
-    def parse(cls, page: bytes, row: int) -> "HistoryPlaylist":
+    def parse(cls, page: bytes, row: int) -> HistoryPlaylist:
         return cls(id=_u32(page, row), name=decode_string(page, row + 4))
 
 
@@ -398,7 +398,7 @@ class HistoryEntry:
     entry_index: int
 
     @classmethod
-    def parse(cls, page: bytes, row: int) -> "HistoryEntry":
+    def parse(cls, page: bytes, row: int) -> HistoryEntry:
         return cls(
             track_id=_u32(page, row),
             playlist_id=_u32(page, row + 4),
@@ -423,7 +423,7 @@ class Tag:
     index_shift: int
 
     @classmethod
-    def parse(cls, page: bytes, row: int) -> "Tag":
+    def parse(cls, page: bytes, row: int) -> Tag:
         return cls(
             index_shift=_u16(page, row + 2),
             category_id=_u32(page, row + 0x0C),

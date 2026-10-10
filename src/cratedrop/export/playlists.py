@@ -34,7 +34,7 @@ def resolve_m3u(m3u: Path, by_path: dict[str, int],
         p = Path(entry)
         if p.is_absolute():
             candidates.append(p)
-        candidates.append((m3u.parent / entry))
+        candidates.append(m3u.parent / entry)
         tid = None
         for cand in candidates:
             try:

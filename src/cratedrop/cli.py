@@ -182,10 +182,15 @@ def process(template: Path = typer.Option(
         None, "--template",
         help="golden USB capture dir to seed export.pdb from")) -> None:
     """Analyze staged tracks and update the processed USB image."""
-    from .export.builder import build_image
+    from rich.progress import (
+        BarColumn,
+        MofNCompleteColumn,
+        Progress,
+        TextColumn,
+        TimeRemainingColumn,
+    )
 
-    from rich.progress import (BarColumn, MofNCompleteColumn, Progress,
-                               TextColumn, TimeRemainingColumn)
+    from .export.builder import build_image
 
     cfg = Config.load()
     staging = cfg.require("staging-dir")
@@ -261,8 +266,14 @@ def flash(volume: str = typer.Option(..., "--volume", help="mounted volume name 
         saved = usb.snapshot_deck_writes(
             mount, plan, processed / ".cratedrop" / "deck-writes" / stamp)
         console.print(f"snapshotted {len(saved)} deck-modified file(s)")
-    from rich.progress import (BarColumn, DownloadColumn, Progress, TextColumn,
-                               TimeRemainingColumn, TransferSpeedColumn)
+    from rich.progress import (
+        BarColumn,
+        DownloadColumn,
+        Progress,
+        TextColumn,
+        TimeRemainingColumn,
+        TransferSpeedColumn,
+    )
 
     total_bytes = sum((processed / rel).stat().st_size for rel in plan.copy
                       if (processed / rel).exists())

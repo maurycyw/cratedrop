@@ -197,7 +197,8 @@ def fit_grid(beats_s: np.ndarray, downbeats_s: np.ndarray, duration_ms: float,
         return fit_constant_grid(beats_s, downbeats_s, duration_ms,
                                  samples=samples, sample_rate=sample_rate)
 
-    from ..model import Beat, BeatGrid as _BG
+    from ..model import Beat
+    from ..model import BeatGrid as _BG
 
     # Merge adjacent runs whose tempo agrees within 1%: they are one tempo
     # split by a bad beat, and the joint fit averages the tracker's 20 ms

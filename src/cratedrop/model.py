@@ -60,7 +60,7 @@ class BeatGrid:
 
     @staticmethod
     def constant(bpm: float, first_beat_ms: float, duration_ms: float,
-                 first_beat_in_bar: int = 1, confidence: float = 0.0) -> "BeatGrid":
+                 first_beat_in_bar: int = 1, confidence: float = 0.0) -> BeatGrid:
         """Expand a constant grid into explicit beats up to duration_ms."""
         interval = 60_000.0 / bpm
         beats = []
@@ -115,7 +115,7 @@ class TrackAnalysis:
     waveform: WaveformData | None = None
     analyzer_versions: dict[str, str] = field(default_factory=dict)
 
-    def replace_cues(self, cues: tuple[CuePoint, ...]) -> "TrackAnalysis":
+    def replace_cues(self, cues: tuple[CuePoint, ...]) -> TrackAnalysis:
         from dataclasses import replace
 
         return replace(self, cues=cues)
@@ -126,7 +126,7 @@ class TrackAnalysis:
         return json.dumps(asdict(self), indent=2)
 
     @classmethod
-    def from_json(cls, text: str) -> "TrackAnalysis":
+    def from_json(cls, text: str) -> TrackAnalysis:
         raw: dict[str, Any] = json.loads(text)
         meta = TrackMeta(**raw["meta"])
         grid = None
@@ -158,7 +158,7 @@ class TrackAnalysis:
         Path(path).write_text(self.to_json())
 
     @classmethod
-    def load(cls, path: str | Path) -> "TrackAnalysis":
+    def load(cls, path: str | Path) -> TrackAnalysis:
         return cls.from_json(Path(path).read_text())
 
 

@@ -2,6 +2,7 @@ import struct
 
 import numpy as np
 import pytest
+from pyrekordbox.anlz import AnlzFile
 
 from cratedrop.formats.anlz import writer
 from cratedrop.formats.anlz.sections import anlz_folder_name
@@ -13,8 +14,6 @@ from cratedrop.model import (
     TrackMeta,
     WaveformData,
 )
-
-from pyrekordbox.anlz import AnlzFile
 
 USB_PATH = "/Contents/cratedrop/Test/Click.wav"
 

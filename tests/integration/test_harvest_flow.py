@@ -78,7 +78,8 @@ def test_onelibrary_history_harvest(tmp_path):
     con.execute("INSERT INTO history (history_id, sequenceNo, name, attribute, history_id_parent) "
                 "VALUES (1, 1, 'HISTORY 001', 0, 0)")
     con.execute("INSERT INTO history_content (history_id, content_id, sequenceNo) VALUES (1, 1, 1)")
-    con.commit(); con.close()
+    con.commit()
+    con.close()
 
     report = harvest(mount, processed)
     assert report.history_playlists == 1

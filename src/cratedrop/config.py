@@ -27,7 +27,7 @@ class Config:
     playlists_from_folders: bool = False  # top-level staging folders -> playlists
 
     @classmethod
-    def load(cls) -> "Config":
+    def load(cls) -> Config:
         if not CONFIG_PATH.exists():
             return cls()
         raw = tomllib.loads(CONFIG_PATH.read_text())
