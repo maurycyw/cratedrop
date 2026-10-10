@@ -2,7 +2,7 @@
 
 **Your music library on a USB stick that every Pioneer / AlphaTheta deck reads natively — no Rekordbox, no cloud sync, no laptop at the gig.**
 
-![tests](https://github.com/maurycyw/cratedrop/actions/workflows/tests.yml/badge.svg)
+![tests](https://github.com/maurycyw/cratedrop/actions/workflows/tests.yml/badge.svg) [![PyPI](https://img.shields.io/pypi/v/cratedrop)](https://pypi.org/project/cratedrop/)
 
 Drop audio files in a folder. cratedrop analyzes them (BPM, beatgrid, key, hot cues, waveforms, artwork) and maintains a USB image carrying **both** device database formats, so one stick works across every current player generation. Plug it in and play.
 
@@ -47,11 +47,11 @@ uv sync --extra dsp && uv run pytest
 ## Quickstart
 
 ```sh
-uv run cratedrop config set staging-dir ~/Music/library     # where your audio lives
-uv run cratedrop config set processed-dir ~/Music/cdj-image # the maintained USB image
+cratedrop config set staging-dir ~/Music/library     # where your audio lives
+cratedrop config set processed-dir ~/Music/cdj-image # the maintained USB image
 
-uv run cratedrop process                  # analyze everything, build the image
-uv run cratedrop flash --volume MYUSB     # sync to /Volumes/MYUSB
+cratedrop process                  # analyze everything, build the image
+cratedrop flash --volume MYUSB     # sync to /Volumes/MYUSB
 ```
 
 Then plug the stick into a deck. Subsequent runs are incremental: new tracks analyze once (cached by content hash), and `flash` copies only what changed — adding 5 tracks to a 10,000-track stick takes seconds.
@@ -59,7 +59,7 @@ Then plug the stick into a deck. Subsequent runs are incremental: new tracks ana
 For a hands-off library, leave the watcher running instead of calling `process`:
 
 ```sh
-uv run cratedrop watch     # auto-ingests files dropped into the staging dir
+cratedrop watch     # auto-ingests files dropped into the staging dir
 ```
 
 Files are only picked up once fully written (safe for slow network copies).
