@@ -82,13 +82,23 @@ def build_ppth(usb_file_path: str) -> bytes:
 
 
 def build_pqtz(beats: list[tuple[int, float]], bpm: float) -> bytes:
-    """beats: list of (beat_in_bar 1..4, time_ms). len_header=24 confirmed."""
+    """beats: list of (beat_in_bar 1..4, time_ms). len_header=24 confirmed.
+    Tempo is stored PER BEAT (centi-BPM from the interval to the next beat),
+    which is how variable grids work; a constant grid yields the same
+    constant value throughout."""
     if not beats:
         body = _u32(0) + _u32(0x80000) + _u32(0)
         return _section(b"PQTZ", body, 24)
-    tempo = round((bpm or 128.0) * 100) & 0xFFFF
+    fallback = round((bpm or 128.0) * 100) & 0xFFFF
+    tempos = []
+    for i in range(len(beats)):
+        if i + 1 < len(beats) and beats[i + 1][1] > beats[i][1]:
+            tempos.append(min(0xFFFF, round(6_000_000.0 / (beats[i + 1][1] - beats[i][1]))))
+        else:
+            tempos.append(tempos[-1] if tempos else fallback)
     parts = [_u32(0), _u32(0x80000), _u32(len(beats))]
-    parts += [_u16(bib) + _u16(tempo) + _u32(round(t)) for bib, t in beats]
+    parts += [_u16(bib) + _u16(tempos[i]) + _u32(round(t))
+              for i, (bib, t) in enumerate(beats)]
     return _section(b"PQTZ", b"".join(parts), 24)
 
 

@@ -30,8 +30,8 @@ def detect_grid(samples: np.ndarray, sample_rate: int,
     beats, downbeats = _audio2beats()(samples.astype(np.float32), sample_rate)
     if len(beats) < 8:
         raise RuntimeError(f"beat tracker found only {len(beats)} beats")
-    return fit_constant_grid(np.asarray(beats), np.asarray(downbeats), duration_ms,
-                             samples=samples, sample_rate=sample_rate)
+    return fit_grid(np.asarray(beats), np.asarray(downbeats), duration_ms,
+                    samples=samples, sample_rate=sample_rate)
 
 
 def fit_constant_grid(beats_s: np.ndarray, downbeats_s: np.ndarray,
@@ -138,3 +138,124 @@ def fit_constant_grid(beats_s: np.ndarray, downbeats_s: np.ndarray,
     confidence = float((err < 0.030).mean())
     return BeatGrid(bpm=grid.bpm, first_beat_ms=grid.first_beat_ms,
                     beats=grid.beats, confidence=confidence)
+
+
+# ── variable tempo ───────────────────────────────────────────────────────────
+
+
+def _steady_runs(beats_s: np.ndarray) -> list[tuple[int, int]]:
+    """Maximal runs [i, j] (beat indexes, inclusive) whose inter-beat
+    intervals stay near the run's own local tempo. DJ edits and multi-tempo
+    sets break into several runs."""
+    ibis = np.diff(beats_s)
+    runs: list[tuple[int, int]] = []
+    start = 0
+    for i in range(1, len(ibis)):
+        local = float(np.median(ibis[start:i]))
+        if abs(float(ibis[i]) - local) > max(0.025, 0.08 * local):
+            if i - start >= 15:  # >= 16 beats
+                runs.append((start, i))
+            start = i + 1
+    if len(ibis) - start >= 15:
+        runs.append((start, len(ibis)))
+    return runs
+
+
+def _fit_segment(seg: np.ndarray) -> tuple[float, float, float]:
+    """(interval_s, anchor_s, median_abs_residual_s) for one steady run."""
+    interval = float(np.median(np.diff(seg)))
+    for _ in range(2):
+        steps = np.maximum(1, np.round(np.diff(seg) / interval)).astype(int)
+        idx = np.concatenate([[0], np.cumsum(steps)])
+        slope, intercept = np.polyfit(idx, seg, 1)
+        interval = float(slope)
+    bpm = round(60.0 / interval, 2)
+    interval = 60.0 / bpm
+    resid = seg - (np.round((seg - intercept) / interval) * interval + intercept)
+    phase = float(intercept + np.median(resid))
+    anchor = phase + round((seg[0] - phase) / interval) * interval
+    quality = float(np.median(np.abs(resid - np.median(resid))))
+    return interval, anchor, quality
+
+
+def fit_grid(beats_s: np.ndarray, downbeats_s: np.ndarray, duration_ms: float,
+             samples: np.ndarray | None = None,
+             sample_rate: int = DETECTOR_SAMPLE_RATE) -> BeatGrid:
+    """Constant grid when one tempo covers the track; otherwise a segmented
+    (piecewise-constant) grid — DJ edits with cut beats, multi-tempo sets."""
+    beats_s = np.sort(beats_s)
+    med = float(np.median(np.diff(beats_s)))
+    keep = [0]
+    for i in range(1, len(beats_s)):
+        if beats_s[i] - beats_s[keep[-1]] >= 0.6 * med:
+            keep.append(i)
+    beats_s = beats_s[keep]
+
+    runs = _steady_runs(beats_s)
+    total = len(beats_s)
+    if not runs or (max(j - i + 1 for i, j in runs) / total) >= 0.90 or len(runs) == 1:
+        return fit_constant_grid(beats_s, downbeats_s, duration_ms,
+                                 samples=samples, sample_rate=sample_rate)
+
+    from ..model import Beat, BeatGrid as _BG
+
+    # Merge adjacent runs whose tempo agrees within 1%: they are one tempo
+    # split by a bad beat, and the joint fit averages the tracker's 20 ms
+    # frame quantization out far better than two short fits.
+    fitted: list[tuple[int, int, float]] = []
+    for i, j in runs:
+        interval, _, _ = _fit_segment(beats_s[i:j + 2])  # j is an IBI index
+        if fitted and abs(interval - fitted[-1][2]) / fitted[-1][2] < 0.01:
+            pi, _, _ = fitted[-1]
+            joint, _, quality = _fit_segment(beats_s[pi:j + 2])
+            # merge only if one grid truly spans both runs (no phase jump
+            # hiding in the gap) — otherwise keep them separate
+            if quality < 0.012:
+                fitted[-1] = (pi, j, joint)
+                continue
+        fitted.append((i, j, interval))
+
+    segments = []
+    for i, j, _ in fitted:
+        interval, anchor, _ = _fit_segment(beats_s[i:j + 2])
+        segments.append((anchor, interval))
+    segments.sort()
+
+    grid: list[Beat] = []
+    for k, (anchor, interval) in enumerate(segments):
+        end = segments[k + 1][0] - interval * 0.5 if k + 1 < len(segments)             else duration_ms / 1000.0
+        times = np.arange(anchor, end, interval)
+        if not len(times):
+            continue
+        # bar phase per segment: vote the detected downbeats inside it
+        db = downbeats_s[(downbeats_s >= anchor - interval / 2)
+                         & (downbeats_s < end)] if len(downbeats_s) else []
+        if len(db):
+            offs = np.round((np.asarray(db) - anchor) / interval).astype(int) % 4
+            bar_offset = int(np.bincount(offs, minlength=4).argmax())
+        else:
+            bar_offset = 0
+        for n, t in enumerate(times):
+            grid.append(Beat(time_ms=float(t * 1000.0),
+                             beat_in_bar=(n - bar_offset) % 4 + 1))
+
+    grid.sort(key=lambda b: b.time_ms)
+    # dominant bpm = tempo of the segment covering the most time
+    spans = []
+    for k, (anchor, interval) in enumerate(segments):
+        end = segments[k + 1][0] if k + 1 < len(segments) else duration_ms / 1000.0
+        spans.append((end - anchor, interval))
+    dominant_interval = max(spans)[1]
+    bpm = round(60.0 / dominant_interval, 2)
+
+    grid_times = np.array([b.time_ms for b in grid]) / 1000.0
+    if len(grid_times):
+        idx = np.clip(np.searchsorted(grid_times, beats_s), 1, len(grid_times) - 1)
+        err = np.minimum(np.abs(beats_s - grid_times[idx]),
+                         np.abs(beats_s - grid_times[idx - 1]))
+        confidence = float((err < 0.030).mean())
+    else:
+        confidence = 0.0
+    first = grid[0].time_ms if grid else 0.0
+    return _BG(bpm=bpm, first_beat_ms=first, beats=tuple(grid),
+               confidence=confidence)

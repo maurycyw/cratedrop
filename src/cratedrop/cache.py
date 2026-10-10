@@ -10,7 +10,7 @@ ANALYZER_VERSIONS = {
     # bump a component to invalidate cached results produced by it
     "meta": "1",
     "waveform": "2-butterworth-p95",
-    "grid": "beat-this-1",
+    "grid": "beat-this-2-segmented",
     "key": "essentia-edma-1",
     "cues": "heuristic-1",
 }
