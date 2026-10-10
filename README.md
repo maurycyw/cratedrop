@@ -94,6 +94,7 @@ Safety: `flash` is the only code that touches `/Volumes`, and it refuses anythin
 - Memory cues and loops are harvested/preserved but not yet re-written to the stick
 - Developed and tested on macOS; the format writers are pure Python and portable, `flash`'s device safety checks are macOS-specific for now
 - Reverse-engineered formats: a Rekordbox/firmware update could change things. Test your stick before a gig. **Use at your own risk.**
+- The OneLibrary database encryption key is **not distributed with cratedrop**: it is resolved at first use from public community documentation (one-time network fetch, cached locally) or from the `CRATEDROP_ONELIBRARY_KEY` environment variable
 
 ## How it's verified
 

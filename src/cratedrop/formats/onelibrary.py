@@ -19,14 +19,71 @@ from pathlib import Path
 
 from ..model import TrackAnalysis
 
-import os
+# The exportLibrary.db SQLCipher key is NOT shipped in this repository.
+# It is community-documented; cratedrop resolves it at runtime:
+#   1. CRATEDROP_ONELIBRARY_KEY environment variable
+#   2. a locally cached copy (~/.config/cratedrop/onelibrary.key)
+#   3. fetched once from public sources that publish it, verified by
+#      successfully opening the (encrypted) template database in this repo
+KEY_ENV = "CRATEDROP_ONELIBRARY_KEY"
+KEY_SOURCES = (
+    "https://raw.githubusercontent.com/dylanljones/pyrekordbox/master/pyrekordbox/devicelib_plus/database.py",
+    "https://gist.githubusercontent.com/0xdevalias/b803476793b56f7c45e6361799168eb0/raw",
+)
+_KEY_CACHE: list[str] = []
 
-# SQLCipher key for exportLibrary.db. Publicly documented by the community
-# (see 0xdevalias' writeup; also shipped by the rbox project) — overridable
-# in case it ever needs to come out of the source tree.
-KEY = os.environ.get(
-    "CRATEDROP_ONELIBRARY_KEY",
-    "[ONELIBRARY-KEY-REDACTED]")
+
+def _key_file() -> Path:
+    from ..config import CONFIG_DIR
+
+    return CONFIG_DIR / "onelibrary.key"
+
+
+def _key_works(candidate: str) -> bool:
+    try:
+        con = _connect_with(TEMPLATE, candidate)
+        con.execute("SELECT COUNT(*) FROM sqlite_master")
+        con.close()
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def resolve_key() -> str:
+    if _KEY_CACHE:
+        return _KEY_CACHE[0]
+    import os
+    import re
+    import urllib.request
+
+    env = os.environ.get(KEY_ENV, "").strip()
+    if env:
+        _KEY_CACHE.append(env)
+        return env
+    cached = _key_file()
+    if cached.exists():
+        key = cached.read_text().strip()
+        if key:
+            _KEY_CACHE.append(key)
+            return key
+    for url in KEY_SOURCES:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "cratedrop"})
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                text = resp.read().decode(errors="replace")
+        except Exception:  # noqa: BLE001
+            continue
+        for candidate in dict.fromkeys(re.findall(r"[a-z0-9]{64}", text)):
+            if _key_works(candidate):
+                cached.parent.mkdir(parents=True, exist_ok=True)
+                cached.write_text(candidate)
+                _KEY_CACHE.append(candidate)
+                return candidate
+    raise RuntimeError(
+        "OneLibrary key unavailable: set the CRATEDROP_ONELIBRARY_KEY "
+        "environment variable (the exportLibrary.db SQLCipher key is "
+        "documented by the community) or allow network access for the "
+        "one-time fetch.")
 TEMPLATE = Path(str(files("cratedrop.formats.pdb") / "templates" / "empty-exportLibrary.db"))
 
 # same codes Rekordbox uses in the pdb (verified across the user's library)
@@ -45,13 +102,17 @@ class OneLibTrack:
     date_added: str        # ISO date
 
 
-def connect(path: Path):
+def _connect_with(path: Path, key: str):
     import sqlcipher3
 
     con = sqlcipher3.connect(str(path))
-    con.execute(f"PRAGMA key = '{KEY}'")
+    con.execute(f"PRAGMA key = '{key}'")
     con.execute("PRAGMA cipher_compatibility = 4")
     return con
+
+
+def connect(path: Path):
+    return _connect_with(path, resolve_key())
 
 
 def _key_name(analysis: TrackAnalysis) -> str | None:
