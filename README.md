@@ -53,7 +53,15 @@ For a hands-off library, leave the watcher running instead of calling `process`:
 uv run cratedrop watch     # auto-ingests files dropped into the staging dir
 ```
 
-Files are only picked up once fully written (safe for slow network copies), and every track added lands in a playlist named for the day it arrived (`10/10/2026`).
+Files are only picked up once fully written (safe for slow network copies).
+
+### Playlists
+
+Every stick gets an all-tracks playlist, plus (all additive):
+
+- **date-added playlists** (`10/10/2026` — the day a track entered the library): on by default, `cratedrop config set playlists-by-date false` to disable
+- **your existing playlists**: drop `.m3u`/`.m3u8` files (exported from Rekordbox, iTunes, Serato, …) anywhere in the staging dir — entries are matched by path or filename, so playlists exported on another machine still resolve
+- **folder playlists**: `cratedrop config set playlists-from-folders true` turns each top-level staging folder into a playlist (for genre/crate-organized libraries)
 
 ## What a track gets
 

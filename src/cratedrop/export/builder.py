@@ -216,6 +216,7 @@ def build_image(staging_dir: Path, processed_dir: Path,
     by_date: dict[str, list[int]] = {}
     onelib_tracks: list[OneLibTrack] = []
     onelib_index: dict[int, int] = {}  # pdb track id -> onelib_tracks index
+    src_to_id: dict[Path, int] = {}    # staged source file -> pdb track id
 
     def checkpoint() -> None:
         """Persist a valid image right now: an interrupted run over a huge
@@ -272,14 +273,28 @@ def build_image(staging_dir: Path, processed_dir: Path,
             image_path=art_b_rel.get(track_art_sha.get(analysis.meta.sha1, ""), None),
             date_added=date or _fallback_date(src)))
         onelib_index[track_id] = len(onelib_tracks) - 1
+        src_to_id[src] = track_id
         report.tracks += 1
         if not was_cached and report.tracks % 25 == 0:
             checkpoint()
 
-    # date-added playlists, newest first (MM/DD/YYYY, one per ingest day)
-    for date in sorted(by_date, reverse=True):
-        pid = builder.create_playlist(_playlist_name(date))
-        for track_id in by_date[date]:
+    # Extra playlists, all additive (see export/playlists.py): ingest-date
+    # (configurable, default on), top-level folders (opt-in), and any
+    # .m3u/.m3u8 dropped in staging (always).
+    from ..config import Config
+    from . import playlists as pl
+
+    cfg = Config.load()
+    extra: list[tuple[str, list[int]]] = []
+    if cfg.playlists_by_date:
+        for date in sorted(by_date, reverse=True):
+            extra.append((_playlist_name(date), by_date[date]))
+    if cfg.playlists_from_folders:
+        extra += pl.folder_playlists(staging_dir, src_to_id)
+    extra += pl.m3u_playlists(staging_dir, src_to_id)
+    for name, ids in extra:
+        pid = builder.create_playlist(name)
+        for track_id in ids:
             builder.add_to_playlist(pid, track_id)
     dates_path = processed_dir / INGEST_DATES_REL
     dates_path.parent.mkdir(parents=True, exist_ok=True)
@@ -292,9 +307,8 @@ def build_image(staging_dir: Path, processed_dir: Path,
         shutil.copy2(template_ext, pdb_dir / "exportExt.pdb")
     # OneLibrary (XDJ-AZ / Opus Quad / CDJ-3000X): same tracks, same playlists
     onelib_playlists = [("cratedrop", [onelib_index[t] for t in onelib_index])]
-    for date in sorted(by_date, reverse=True):
-        onelib_playlists.append((_playlist_name(date),
-                                 [onelib_index[t] for t in by_date[date]]))
+    for name, ids in extra:
+        onelib_playlists.append((name, [onelib_index[t] for t in ids]))
     written = write_onelibrary(pdb_dir, onelib_tracks, onelib_playlists)
     # deck settings (DEVSETTING.DAT etc.) imported from a Rekordbox stick:
     # the deck auto-loads these (waveform color mode, jog mode, ...)
